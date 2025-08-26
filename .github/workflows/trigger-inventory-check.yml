@@ -1,0 +1,21 @@
+name: Trigger Inventory Check
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # 07:00 Europe/Paris daily
+  workflow_dispatch: {}
+
+jobs:
+  call-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call check-replenishment endpoint
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          set -euo pipefail
+          curl -sS -X POST "$API_URL/api/check-replenishment" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $API_KEY" \
+            -d '{"options": {"dryRun": false}}' | jq '.'

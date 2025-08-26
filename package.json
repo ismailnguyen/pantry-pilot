@@ -1,0 +1,50 @@
+{
+  "name": "pantry-pilot",
+  "version": "1.0.0",
+  "description": "A production-ready service that automatically monitors pantry inventory and sends replenishment notifications",
+  "type": "module",
+  "main": "src/app/index.js",
+  "scripts": {
+    "start": "node src/app/index.js",
+    "dev": "node --watch src/app/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
+  },
+  "keywords": ["pantry", "inventory", "replenishment", "automation", "household"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "pino": "^8.15.0",
+    "nodemailer": "^6.9.4",
+    "googleapis": "^126.0.1",
+    "zod": "^3.22.2",
+    "helmet": "^7.0.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "jest": "^29.6.2",
+    "supertest": "^6.3.3",
+    "eslint": "^8.47.0",
+    "@jest/globals": "^29.6.2"
+  },
+  "jest": {
+    "preset": "default",
+    "testEnvironment": "node",
+    "transform": {},
+    "extensionsToTreatAsEsm": [".js"],
+    "globals": {
+      "jest": {
+        "useESM": true
+      }
+    },
+    "moduleNameMapping": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
