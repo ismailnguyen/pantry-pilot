@@ -11,7 +11,7 @@ export class SmtpEmailNotifier {
   async _getTransporter() {
     if (!this.transporter) {
       try {
-        this.transporter = nodemailer.createTransporter({
+        this.transporter = nodemailer.createTransport({
           host: this.config.host,
           port: this.config.port,
           secure: this.config.secure,
@@ -31,8 +31,8 @@ export class SmtpEmailNotifier {
           error: error.message, 
           host: this.config.host, 
           port: this.config.port 
-        }, 'Failed to initialize SMTP transporter');
-        throw new AdapterError('Failed to initialize SMTP transporter', 'smtp', error);
+        }, 'Failed to initialize SMTP transport');
+        throw new AdapterError('Failed to initialize SMTP transport', 'smtp', error);
       }
     }
     return this.transporter;
