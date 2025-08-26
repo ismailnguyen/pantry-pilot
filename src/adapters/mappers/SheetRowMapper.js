@@ -108,6 +108,40 @@ export class SheetRowMapper {
     ]);
   }
 
+  static getQuantityUpdateRange(startRow, endRow) {
+    return `E${startRow}:E${endRow}`;
+  }
+
+  static getQuantityUpdateValues(products) {
+    return products.map(product => [product.qtyRemaining]);
+  }
+
+  static getAllUpdateRange(startRow, endRow) {
+    return `E${startRow}:U${endRow}`;
+  }
+
+  static getAllUpdateValues(products) {
+    return products.map(product => [
+      product.qtyRemaining,
+      product.avgDailyConsumption,
+      product.avgMonthlyConsumption,
+      product.lastReplenishedAt ? product.lastReplenishedAt.toISOString().slice(0, 10) : '',
+      product.autoSubscription?.active || false,
+      product.autoSubscription?.details || '',
+      product.buy?.place || '',
+      product.buy?.url || '',
+      product.leadTimeDays,
+      product.safetyStockDays,
+      product.minOrderQty,
+      product.packSize,
+      product.needsReplenishment,
+      product.replenishByDate ? (product.replenishByDate instanceof Date ? product.replenishByDate.toISOString().slice(0, 10) : product.replenishByDate) : '',
+      product.recommendedOrderQty,
+      product.reason,
+      product.lastCheckAt ? product.lastCheckAt.toISOString() : ''
+    ]);
+  }
+
   static _parseNumber(value, defaultValue) {
     if (value === null || value === undefined || value === '') {
       return defaultValue;

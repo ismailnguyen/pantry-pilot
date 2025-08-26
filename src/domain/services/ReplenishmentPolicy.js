@@ -3,10 +3,14 @@ export class ReplenishmentPolicy {
     const {
       now = new Date(),
       reviewHorizonDays = 14,
-      overrideTargetWindowDays = null
+      overrideTargetWindowDays = null,
+      autoDecrementStock = true
     } = options;
 
     const avgDaily = product.getAvgDailyConsumption();
+    
+    // Calculate current stock based on consumption since last replenishment
+    const currentStock = autoDecrementStock ? product.calculateCurrentStock(now) : product.qtyRemaining;
     
     if (product.hasAutoSubscription()) {
       return {
@@ -14,22 +18,26 @@ export class ReplenishmentPolicy {
         recommendedOrderQty: null,
         replenishByDate: null,
         reason: 'auto_subscription_active',
-        daysUntilDepletion: avgDaily && avgDaily > 0 ? product.qtyRemaining / avgDaily : null
+        daysUntilDepletion: avgDaily && avgDaily > 0 ? currentStock / avgDaily : null,
+        currentStock,
+        daysSinceReplenishment: product.getDaysSinceLastReplenishment(now)
       };
     }
 
     if (!avgDaily || avgDaily <= 0) {
-      const isDepleted = product.qtyRemaining <= 0;
+      const isDepleted = currentStock <= 0;
       return {
         needsReplenishment: isDepleted,
         recommendedOrderQty: isDepleted ? Math.max(1, product.minOrderQty || product.packSize || 1) : null,
         replenishByDate: null,
         reason: isDepleted ? 'depleted_or_invalid' : 'insufficient_consumption_data',
-        daysUntilDepletion: null
+        daysUntilDepletion: null,
+        currentStock,
+        daysSinceReplenishment: product.getDaysSinceLastReplenishment(now)
       };
     }
 
-    const daysUntilDepletion = product.qtyRemaining / avgDaily;
+    const daysUntilDepletion = currentStock / avgDaily;
     const targetWindowDays = overrideTargetWindowDays ?? (product.leadTimeDays + product.safetyStockDays);
     
     const needsReplenishment = daysUntilDepletion <= targetWindowDays;
@@ -39,7 +47,7 @@ export class ReplenishmentPolicy {
     
     if (needsReplenishment) {
       const targetCoverageDays = targetWindowDays + reviewHorizonDays;
-      const targetQty = Math.ceil(Math.max(0, targetCoverageDays * avgDaily - product.qtyRemaining));
+      const targetQty = Math.ceil(Math.max(0, targetCoverageDays * avgDaily - currentStock));
       
       recommendedOrderQty = this._applyOrderConstraints(targetQty, product);
       
@@ -52,7 +60,9 @@ export class ReplenishmentPolicy {
       recommendedOrderQty,
       replenishByDate,
       reason: needsReplenishment ? 'within_target_window' : 'sufficient_stock',
-      daysUntilDepletion
+      daysUntilDepletion,
+      currentStock,
+      daysSinceReplenishment: product.getDaysSinceLastReplenishment(now)
     };
   }
 

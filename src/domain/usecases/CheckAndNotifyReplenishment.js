@@ -30,7 +30,8 @@ export class CheckAndNotifyReplenishment {
         const decision = ReplenishmentPolicy.computeDecision(product, {
           now,
           reviewHorizonDays: policyOverrides.reviewHorizonDays,
-          overrideTargetWindowDays: policyOverrides.overrideTargetWindowDays
+          overrideTargetWindowDays: policyOverrides.overrideTargetWindowDays,
+          autoDecrementStock: policyOverrides.autoDecrementStock !== false
         });
 
         const resultItem = {
@@ -39,8 +40,10 @@ export class CheckAndNotifyReplenishment {
           brand: product.brand,
           unit: product.unit,
           qtyRemaining: product.qtyRemaining,
+          currentStock: decision.currentStock,
           avgDaily: product.getAvgDailyConsumption(),
           daysUntilDepletion: decision.daysUntilDepletion,
+          daysSinceReplenishment: decision.daysSinceReplenishment,
           needsReplenishment: decision.needsReplenishment,
           recommendedOrderQty: decision.recommendedOrderQty,
           replenishByDate: decision.replenishByDate?.toISOString()?.slice(0, 10) || null,
@@ -56,13 +59,26 @@ export class CheckAndNotifyReplenishment {
         updatedProduct.replenishByDate = decision.replenishByDate;
         updatedProduct.reason = decision.reason;
         updatedProduct.lastCheckAt = now;
+        
+        // Optionally update the quantity to reflect calculated current stock
+        if (policyOverrides.updateCalculatedQuantities && decision.currentStock !== product.qtyRemaining) {
+          updatedProduct.qtyRemaining = decision.currentStock;
+        }
 
         updates.push(updatedProduct);
       }
 
       if (!notification.dryRun) {
-        await this.inventoryRepository.saveProducts(updates);
-        this.logger.info({ updatedCount: updates.length }, 'Saved product updates');
+        const saveOptions = {
+          updateQuantities: policyOverrides.updateCalculatedQuantities || false,
+          updateAllFields: false
+        };
+        
+        await this.inventoryRepository.saveProducts(updates, saveOptions);
+        this.logger.info({ 
+          updatedCount: updates.length,
+          updateQuantities: saveOptions.updateQuantities
+        }, 'Saved product updates');
       } else {
         this.logger.info('Dry run - skipped saving product updates');
       }
@@ -135,12 +151,16 @@ export class CheckAndNotifyReplenishment {
       const daysLeft = item.daysUntilDepletion !== null ? 
         Math.round(item.daysUntilDepletion * 10) / 10 : 
         'N/A';
+      
+      const stockDisplay = item.currentStock !== undefined && item.currentStock !== item.qtyRemaining ?
+        `${Math.round(item.currentStock * 100) / 100} ${item.unit} (${item.qtyRemaining} recorded)` :
+        `${item.qtyRemaining} ${item.unit}`;
 
       return `
         <tr>
           <td>${item.name}</td>
           <td>${item.brand || ''}</td>
-          <td>${item.qtyRemaining} ${item.unit}</td>
+          <td>${stockDisplay}</td>
           <td>${daysLeft}</td>
           <td>${item.replenishByDate || ''}</td>
           <td>${item.recommendedOrderQty || ''} ${item.unit}</td>
@@ -199,18 +219,24 @@ The following ${items.length} item(s) need replenishment:
 
     const maxNameLen = Math.max(...items.map(i => i.name.length), 4);
     const maxBrandLen = Math.max(...items.map(i => (i.brand || '').length), 5);
-    const maxQtyLen = Math.max(...items.map(i => `${i.qtyRemaining} ${i.unit}`.length), 9);
+    const stockDisplays = items.map(i => 
+      i.currentStock !== undefined && i.currentStock !== i.qtyRemaining ?
+        `${Math.round(i.currentStock * 100) / 100} ${i.unit} (${i.qtyRemaining})` :
+        `${i.qtyRemaining} ${i.unit}`
+    );
+    const maxQtyLen = Math.max(...stockDisplays.map(s => s.length), 9);
 
     const headerRow = `${'Name'.padEnd(maxNameLen)} | ${'Brand'.padEnd(maxBrandLen)} | ${'Remaining'.padEnd(maxQtyLen)} | Days Left | Replenish By | Recommended | Buy`;
     const separator = '-'.repeat(headerRow.length);
 
-    const rows = items.map(item => {
+    const rows = items.map((item, index) => {
       const daysLeft = item.daysUntilDepletion !== null ? 
         Math.round(item.daysUntilDepletion * 10) / 10 : 
         'N/A';
       const buyPlace = item.buy?.place || '';
+      const stockDisplay = stockDisplays[index];
 
-      return `${item.name.padEnd(maxNameLen)} | ${(item.brand || '').padEnd(maxBrandLen)} | ${`${item.qtyRemaining} ${item.unit}`.padEnd(maxQtyLen)} | ${daysLeft.toString().padEnd(9)} | ${(item.replenishByDate || '').padEnd(12)} | ${(item.recommendedOrderQty || '').toString().padEnd(11)} | ${buyPlace}`;
+      return `${item.name.padEnd(maxNameLen)} | ${(item.brand || '').padEnd(maxBrandLen)} | ${stockDisplay.padEnd(maxQtyLen)} | ${daysLeft.toString().padEnd(9)} | ${(item.replenishByDate || '').padEnd(12)} | ${(item.recommendedOrderQty || '').toString().padEnd(11)} | ${buyPlace}`;
     }).join('\n');
 
     return header + headerRow + '\n' + separator + '\n' + rows;

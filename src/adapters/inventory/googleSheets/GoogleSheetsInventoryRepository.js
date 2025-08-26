@@ -103,24 +103,64 @@ export class GoogleSheetsInventoryRepository {
     }
   }
 
-  async saveProducts(products) {
+  async saveProducts(products, options = {}) {
     if (!products || products.length === 0) {
       this.logger.info('No products to save');
       return;
     }
 
+    const { updateQuantities = false, updateAllFields = false } = options;
+
     try {
       const sheets = await this._getSheets();
-      
       const startRow = 2;
       const endRow = startRow + products.length - 1;
-      const range = SheetRowMapper.getDerivedFieldsRange(startRow, endRow);
-      const values = SheetRowMapper.getDerivedFieldsValues(products);
+
+      let range, values, updateDescription;
+      
+      if (updateAllFields) {
+        range = SheetRowMapper.getAllUpdateRange(startRow, endRow);
+        values = SheetRowMapper.getAllUpdateValues(products);
+        updateDescription = 'all fields';
+      } else if (updateQuantities) {
+        // Update both quantities and derived fields with batch update
+        const updates = [
+          {
+            range: SheetRowMapper.getQuantityUpdateRange(startRow, endRow),
+            values: SheetRowMapper.getQuantityUpdateValues(products)
+          },
+          {
+            range: SheetRowMapper.getDerivedFieldsRange(startRow, endRow),
+            values: SheetRowMapper.getDerivedFieldsValues(products)
+          }
+        ];
+
+        this.logger.info({ 
+          ranges: updates.map(u => u.range),
+          productCount: products.length 
+        }, 'Updating quantities and derived fields in Google Sheets');
+
+        await sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId: this.config.spreadsheetId,
+          resource: {
+            valueInputOption: 'RAW',
+            data: updates
+          }
+        });
+
+        this.logger.info({ updatedProducts: products.length }, 'Successfully updated quantities and derived fields in Google Sheets');
+        return;
+      } else {
+        range = SheetRowMapper.getDerivedFieldsRange(startRow, endRow);
+        values = SheetRowMapper.getDerivedFieldsValues(products);
+        updateDescription = 'derived fields';
+      }
 
       this.logger.info({ 
         range, 
-        productCount: products.length 
-      }, 'Updating derived fields in Google Sheets');
+        productCount: products.length,
+        updateType: updateDescription
+      }, `Updating ${updateDescription} in Google Sheets`);
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: this.config.spreadsheetId,
@@ -131,7 +171,10 @@ export class GoogleSheetsInventoryRepository {
         }
       });
 
-      this.logger.info({ updatedProducts: products.length }, 'Successfully updated Google Sheets');
+      this.logger.info({ 
+        updatedProducts: products.length,
+        updateType: updateDescription
+      }, `Successfully updated ${updateDescription} in Google Sheets`);
 
     } catch (error) {
       this.logger.error({ 

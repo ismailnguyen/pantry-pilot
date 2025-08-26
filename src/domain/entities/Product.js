@@ -69,6 +69,28 @@ export class Product {
     return this.autoSubscription?.active === true;
   }
 
+  calculateCurrentStock(now = new Date()) {
+    if (!this.lastReplenishedAt || !this.qtyRemaining) {
+      return this.qtyRemaining;
+    }
+
+    const avgDaily = this.getAvgDailyConsumption();
+    if (!avgDaily || avgDaily <= 0) {
+      return this.qtyRemaining;
+    }
+
+    const daysSinceReplenishment = (now.getTime() - this.lastReplenishedAt.getTime()) / (1000 * 60 * 60 * 24);
+    const consumedSinceReplenishment = avgDaily * daysSinceReplenishment;
+    const currentStock = Math.max(0, this.qtyRemaining - consumedSinceReplenishment);
+    
+    return currentStock;
+  }
+
+  getDaysSinceLastReplenishment(now = new Date()) {
+    if (!this.lastReplenishedAt) return null;
+    return (now.getTime() - this.lastReplenishedAt.getTime()) / (1000 * 60 * 60 * 24);
+  }
+
   clone() {
     return new Product({
       id: this.id,

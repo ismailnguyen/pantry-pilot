@@ -3,7 +3,10 @@ import { ValidationError } from '../../domain/errors/DomainError.js';
 
 const envSchema = z.object({
   PORT: z.string().default('8080'),
-  API_KEY: z.string().min(1, 'API_KEY is required'),
+  API_KEY: z.string().min(8, 'API_KEY must be at least 8 characters long').refine(
+    (val) => val !== 'change-me-long-random', 
+    { message: 'API_KEY must be changed from the default value' }
+  ),
   TZ: z.string().default('Europe/Paris'),
   ALLOW_INLINE_SECRETS: z.string().default('false'),
   
@@ -56,6 +59,8 @@ export class EnvConfig {
     } catch (error) {
       if (error instanceof z.ZodError) {
         const messages = error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
+        console.error('Environment validation errors:');
+        messages.forEach(msg => console.error(`  - ${msg}`));
         throw new ValidationError('Environment configuration validation failed', messages);
       }
       throw error;
@@ -68,7 +73,9 @@ export class EnvConfig {
         dryRun: requestConfig.options?.dryRun ?? false,
         subjectPrefix: requestConfig.options?.subjectPrefix ?? '[Pantry Pilot]',
         reviewHorizonDays: requestConfig.options?.reviewHorizonDays ?? 14,
-        overrideTargetWindowDays: requestConfig.options?.overrideTargetWindowDays ?? null
+        overrideTargetWindowDays: requestConfig.options?.overrideTargetWindowDays ?? null,
+        autoDecrementStock: requestConfig.options?.autoDecrementStock ?? true,
+        updateCalculatedQuantities: requestConfig.options?.updateCalculatedQuantities ?? false
       },
       
       inventory: {

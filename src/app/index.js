@@ -17,6 +17,9 @@ async function main() {
     
   } catch (error) {
     console.error('Failed to start application:', error.message);
+    if (error.details) {
+      console.error('Details:', error.details);
+    }
     process.exit(1);
   }
 }
