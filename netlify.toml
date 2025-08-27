@@ -1,0 +1,21 @@
+[build]
+  command = "npm ci"
+  publish = "public" # any folder; not used by the API, but Netlify expects one
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["pino"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/server/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/healthz"
+  to = "/.netlify/functions/server/healthz"
+  status = 200

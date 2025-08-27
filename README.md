@@ -449,6 +449,117 @@ heroku config:set API_KEY=your-key
 git push heroku main
 ```
 
+#### 4. Netlify (Serverless Functions)
+
+You can run this Express service on Netlify by wrapping the app in a serverless function.
+
+Steps:
+
+1) Install dependencies
+
+```bash
+npm install serverless-http @netlify/functions
+```
+
+2) Create a Netlify Function wrapper
+
+Create `netlify/functions/server.mjs` with:
+
+```js
+import serverless from 'serverless-http';
+import { composeApplication } from '../../src/app/compose.js';
+
+// Compose once per function instance
+const { server } = composeApplication(); // `server` is an Express app
+
+// Export Netlify handler
+export const handler = serverless(server);
+```
+
+3) Add `netlify.toml` at the repo root
+
+```toml
+[build]
+  command = "npm ci"
+  publish = "public" # any folder; not used by the API, but Netlify expects one
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["pino"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/server/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/healthz"
+  to = "/.netlify/functions/server/healthz"
+  status = 200
+```
+
+4) Create a placeholder publish directory
+
+```bash
+mkdir -p public && echo "Pantry Pilot" > public/index.html
+```
+
+5) Configure environment variables in Netlify
+
+Set these in Site settings → Build & deploy → Environment:
+- API_KEY
+- TZ (e.g., Europe/Paris)
+- GOOGLE_SPREADSHEET_ID, GOOGLE_SHEET_NAME
+- GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY
+- SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMAIL_FROM, EMAIL_TO
+- ALLOW_INLINE_SECRETS (recommended: false)
+
+Tip: You can paste the Google private key with real newlines or with \n; the code handles both.
+
+6) Deploy
+
+- Via UI: Connect the repo → pick your main branch → Deploy.
+- Via CLI: `netlify init` then `netlify deploy --prod`.
+
+7) Test
+
+```bash
+curl https://<your-site>.netlify.app/healthz
+curl -X POST https://<your-site>.netlify.app/api/check-replenishment \
+  -H "content-type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{"options": {"dryRun": true}}'
+```
+
+Optional: Daily schedule on Netlify
+
+If you prefer Netlify to trigger the daily check (instead of GitHub Actions), add `netlify/functions/schedule.mjs`:
+
+```js
+import { schedule } from '@netlify/functions';
+
+export const handler = schedule('0 7 * * *', async () => {
+  const res = await fetch(`${process.env.URL}/api/check-replenishment`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': process.env.API_KEY
+    },
+    body: JSON.stringify({ options: { dryRun: false } })
+  });
+  return { statusCode: res.status, body: await res.text() };
+});
+```
+
+Notes
+- Netlify Functions have execution time limits (cold starts possible). Keep requests efficient.
+- Logs appear in Netlify → Functions logs. Use `LOG_LEVEL=debug` to increase verbosity.
+- All existing endpoints and auth remain the same; `/api/*` is protected by your `API_KEY`, `/healthz` is public.
+
 ### Reverse Proxy (nginx)
 
 ```nginx
