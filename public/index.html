@@ -1,1 +1,158 @@
-Pantry Pilot
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pantry Pilot Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Sidebar navigation">
+        <div class="sidebar-top">
+          <div class="traffic-lights" aria-hidden="true">
+            <span class="light red"></span>
+            <span class="light amber"></span>
+            <span class="light green"></span>
+          </div>
+          <span class="sidebar-title">Pantry Pilot</span>
+        </div>
+        <nav class="sidebar-nav">
+          <button type="button" class="nav-item" data-view="summary">
+            <span class="nav-icon">⟡</span>
+            <span>Summary</span>
+          </button>
+          <button type="button" class="nav-item" data-view="inventory">
+            <span class="nav-icon">🗂</span>
+            <span>Inventory</span>
+          </button>
+          <button type="button" class="nav-item" data-view="settings">
+            <span class="nav-icon">⚙️</span>
+            <span>Settings</span>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <p>Signed in locally</p>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="main-toolbar">
+          <div class="toolbar-left">
+            <h1 id="toolbar-title">Summary</h1>
+            <p id="toolbar-subtitle">High-level snapshot of your pantry.</p>
+          </div>
+          <div class="toolbar-right">
+            <button type="button" id="reload-data" class="ghost-button">Reload Data</button>
+          </div>
+        </header>
+
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+
+        <section id="summary-view" class="view hidden">
+          <div class="panel">
+            <div class="view-header">
+              <h2>Today</h2>
+              <p class="page-description">Keep an eye on stock health and upcoming replenishments.</p>
+            </div>
+            <div id="summary-cards" class="summary-cards"></div>
+            <p id="summary-empty" class="empty-state">Load your inventory to see a quick summary of your pantry.</p>
+          </div>
+        </section>
+
+        <section id="inventory-view" class="view hidden">
+          <div class="panel">
+            <div class="page-header-row">
+              <div>
+                <h2>Inventory</h2>
+                <p class="page-description">Review, edit, and enrich your pantry items straight from Google Sheets.</p>
+              </div>
+              <button type="button" id="open-settings" class="secondary">Edit Settings</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="table-actions">
+              <div class="left-actions">
+                <button type="button" id="add-row" class="secondary">Add Row</button>
+                <button type="button" id="save-inventory" class="primary">Save Changes</button>
+              </div>
+              <button type="button" id="refresh-insights" class="secondary">Refresh Insights</button>
+            </div>
+            <div id="inventory-container" class="inventory-container">
+              <p class="empty-state">No data loaded yet. Enter your settings and click “Go To Inventory”.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="settings-view" class="view hidden">
+          <div class="panel">
+            <h2>Settings</h2>
+            <p class="page-description">Connect Pantry Pilot to your Google Sheet and email provider. These values stay in your browser.</p>
+            <form id="settings-form">
+              <fieldset>
+                <legend>Google Sheets</legend>
+                <div class="form-grid">
+                  <label>
+                    Spreadsheet ID
+                    <input type="text" name="spreadsheetId" autocomplete="off" placeholder="Google spreadsheet ID" required />
+                  </label>
+                  <label>
+                    Sheet Name
+                    <input type="text" name="sheetName" autocomplete="off" placeholder="Inventory" />
+                  </label>
+                  <label>
+                    Service Account Email
+                    <input type="email" name="googleClientEmail" autocomplete="off" placeholder="service-account@project.iam.gserviceaccount.com" />
+                  </label>
+                  <label class="wide">
+                    Private Key
+                    <textarea name="googlePrivateKey" placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"></textarea>
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Email (SMTP)</legend>
+                <div class="form-grid">
+                  <label>
+                    Host
+                    <input type="text" name="smtpHost" autocomplete="off" placeholder="smtp.gmail.com" />
+                  </label>
+                  <label>
+                    Port
+                    <input type="number" name="smtpPort" autocomplete="off" placeholder="465" />
+                  </label>
+                  <label class="checkbox">
+                    <input type="checkbox" name="smtpSecure" checked />
+                    Use TLS (secure)
+                  </label>
+                  <label>
+                    Username
+                    <input type="text" name="smtpUser" autocomplete="off" />
+                  </label>
+                  <label>
+                    Password
+                    <input type="password" name="smtpPass" autocomplete="off" />
+                  </label>
+                  <label>
+                    Email From
+                    <input type="text" name="emailFrom" autocomplete="off" placeholder="Pantry Pilot you@gmail.com" />
+                  </label>
+                  <label>
+                    Email To
+                    <input type="email" name="emailTo" autocomplete="off" placeholder="you@gmail.com" />
+                  </label>
+                </div>
+              </fieldset>
+              <div class="button-row">
+                <button type="submit">Save Settings</button>
+                <button type="button" id="load-inventory" class="primary">Go To Inventory</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
