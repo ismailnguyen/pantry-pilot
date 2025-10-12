@@ -1,170 +1,68 @@
-import { Product } from '../../domain/entities/Product.js';
-import { ValidationError } from '../../domain/errors/DomainError.js';
+export function createHeaderIndex(header) {
+  return Object.fromEntries(header.map((h, i) => [String(h).trim().toLowerCase(), i]));
+}
 
-export class SheetRowMapper {
-  static HEADER_ROW = [
-    'id', 'name', 'brand', 'unit', 'qty_remaining',
-    'avg_daily_consumption', 'avg_monthly_consumption', 'last_replenished_at',
-    'auto_subscription', 'auto_subscription_note', 'buy_place', 'buy_url',
-    'lead_time_days', 'safety_stock_days', 'min_order_qty', 'pack_size',
-    'needs_replenishment', 'replenish_by_date', 'recommended_order_qty',
-    'reason', 'last_check_at', 'notes'
-  ];
+export function mapRowToProduct(header, row, headerIndex = createHeaderIndex(header)) {
+  const idx = headerIndex;
+  const get = (r, key) => {
+    const position = idx[key];
+    return position === undefined ? undefined : r[position];
+  };
+  const parseNum = value => (value === '' || value === undefined ? undefined : Number(value));
+  const parseBool = value => String(value).toUpperCase() === 'TRUE';
+  const parseDate = value => (value ? new Date(value) : null);
+  const product = {
+    id: String(get(row, 'id') ?? '').trim(),
+    name: String(get(row, 'name') ?? '').trim(),
+    brand: get(row, 'brand') || undefined,
+    unit: get(row, 'unit'),
+    qtyRemaining: Number(get(row, 'qty_remaining') ?? 0),
+    avgDailyConsumption: parseNum(get(row, 'avg_daily_consumption')),
+    avgMonthlyConsumption: parseNum(get(row, 'avg_monthly_consumption')),
+    lastReplenishedAt: parseDate(get(row, 'last_replenished_at')),
+    autoSubscription:
+      get(row, 'auto_subscription') || get(row, 'auto_subscription_note')
+        ? {
+            active: parseBool(get(row, 'auto_subscription')),
+            details: get(row, 'auto_subscription_note') || undefined
+          }
+        : null,
+    buy:
+      get(row, 'buy_place') || get(row, 'buy_url')
+        ? {
+            place: get(row, 'buy_place') || undefined,
+            url: get(row, 'buy_url') || undefined
+          }
+        : null,
+    leadTimeDays: parseNum(get(row, 'lead_time_days')) ?? 2,
+    safetyStockDays: parseNum(get(row, 'safety_stock_days')) ?? 3,
+    minOrderQty: parseNum(get(row, 'min_order_qty')) ?? 1,
+    packSize: parseNum(get(row, 'pack_size')) ?? 1
+  };
+  if (!(product.id && product.name && product.unit && Number.isFinite(product.qtyRemaining))) return null;
+  return product;
+}
 
-  static rowToProduct(row, rowIndex) {
-    try {
-      if (!row || row.length === 0) {
-        return null;
-      }
+export function mapSheetToProducts(header, rows) {
+  const idx = createHeaderIndex(header);
+  return rows.map(row => mapRowToProduct(header, row, idx)).filter(Boolean);
+}
 
-      const [
-        id, name, brand, unit, qtyRemaining,
-        avgDailyConsumption, avgMonthlyConsumption, lastReplenishedAt,
-        autoSubscription, autoSubscriptionNote, buyPlace, buyUrl,
-        leadTimeDays, safetyStockDays, minOrderQty, packSize,
-        needsReplenishment, replenishByDate, recommendedOrderQty,
-        reason, lastCheckAt, notes
-      ] = row;
+export function mapUpdatesToSheet(updates) {
+  return updates.map(update => [
+    update.needsReplenishment ? 'TRUE' : 'FALSE',
+    update.replenishByDate ? formatDate(update.replenishByDate) : '',
+    update.recommendedOrderQty ?? '',
+    update.reason ?? '',
+    (update.lastCheckAt ?? new Date()).toISOString()
+  ]);
+}
 
-      if (!id || !name || !unit) {
-        throw new ValidationError(`Row ${rowIndex}: Missing required fields (id, name, unit)`);
-      }
+function pad2(number) {
+  return String(number).padStart(2, '0');
+}
 
-      const autoSubscriptionObj = autoSubscription === true || autoSubscription === 'TRUE' ? 
-        { active: true, details: autoSubscriptionNote || null } : 
-        null;
-
-      const buyObj = buyPlace || buyUrl ? 
-        { place: buyPlace || null, url: buyUrl || null } : 
-        null;
-
-      return new Product({
-        id: String(id).trim(),
-        name: String(name).trim(),
-        brand: brand ? String(brand).trim() : null,
-        unit: String(unit).trim().toLowerCase(),
-        qtyRemaining: this._parseNumber(qtyRemaining, 0),
-        avgDailyConsumption: this._parseNumber(avgDailyConsumption, null),
-        avgMonthlyConsumption: this._parseNumber(avgMonthlyConsumption, null),
-        lastReplenishedAt: this._parseDate(lastReplenishedAt),
-        autoSubscription: autoSubscriptionObj,
-        buy: buyObj,
-        leadTimeDays: this._parseNumber(leadTimeDays, 2),
-        safetyStockDays: this._parseNumber(safetyStockDays, 3),
-        minOrderQty: this._parseNumber(minOrderQty, null),
-        packSize: this._parseNumber(packSize, null),
-        needsReplenishment: this._parseBoolean(needsReplenishment),
-        replenishByDate: this._parseDate(replenishByDate),
-        recommendedOrderQty: this._parseNumber(recommendedOrderQty, null),
-        reason: reason ? String(reason).trim() : null,
-        lastCheckAt: this._parseDate(lastCheckAt)
-      });
-    } catch (error) {
-      if (error instanceof ValidationError) {
-        throw error;
-      }
-      throw new ValidationError(`Row ${rowIndex}: ${error.message}`);
-    }
-  }
-
-  static productToRow(product) {
-    return [
-      product.id,
-      product.name,
-      product.brand,
-      product.unit,
-      product.qtyRemaining,
-      product.avgDailyConsumption,
-      product.avgMonthlyConsumption,
-      product.lastReplenishedAt ? product.lastReplenishedAt.toISOString().slice(0, 10) : '',
-      product.autoSubscription?.active || false,
-      product.autoSubscription?.details || '',
-      product.buy?.place || '',
-      product.buy?.url || '',
-      product.leadTimeDays,
-      product.safetyStockDays,
-      product.minOrderQty,
-      product.packSize,
-      product.needsReplenishment,
-      product.replenishByDate ? (product.replenishByDate instanceof Date ? product.replenishByDate.toISOString().slice(0, 10) : product.replenishByDate) : '',
-      product.recommendedOrderQty,
-      product.reason,
-      product.lastCheckAt ? product.lastCheckAt.toISOString() : '',
-      ''
-    ];
-  }
-
-  static getDerivedFieldsRange(startRow, endRow) {
-    return `Q${startRow}:U${endRow}`;
-  }
-
-  static getDerivedFieldsValues(products) {
-    return products.map(product => [
-      product.needsReplenishment,
-      product.replenishByDate ? (product.replenishByDate instanceof Date ? product.replenishByDate.toISOString().slice(0, 10) : product.replenishByDate) : '',
-      product.recommendedOrderQty,
-      product.reason,
-      product.lastCheckAt ? product.lastCheckAt.toISOString() : ''
-    ]);
-  }
-
-  static getQuantityUpdateRange(startRow, endRow) {
-    return `E${startRow}:E${endRow}`;
-  }
-
-  static getQuantityUpdateValues(products) {
-    return products.map(product => [product.qtyRemaining]);
-  }
-
-  static getAllUpdateRange(startRow, endRow) {
-    return `E${startRow}:U${endRow}`;
-  }
-
-  static getAllUpdateValues(products) {
-    return products.map(product => [
-      product.qtyRemaining,
-      product.avgDailyConsumption,
-      product.avgMonthlyConsumption,
-      product.lastReplenishedAt ? product.lastReplenishedAt.toISOString().slice(0, 10) : '',
-      product.autoSubscription?.active || false,
-      product.autoSubscription?.details || '',
-      product.buy?.place || '',
-      product.buy?.url || '',
-      product.leadTimeDays,
-      product.safetyStockDays,
-      product.minOrderQty,
-      product.packSize,
-      product.needsReplenishment,
-      product.replenishByDate ? (product.replenishByDate instanceof Date ? product.replenishByDate.toISOString().slice(0, 10) : product.replenishByDate) : '',
-      product.recommendedOrderQty,
-      product.reason,
-      product.lastCheckAt ? product.lastCheckAt.toISOString() : ''
-    ]);
-  }
-
-  static _parseNumber(value, defaultValue) {
-    if (value === null || value === undefined || value === '') {
-      return defaultValue;
-    }
-    const num = Number(value);
-    return isNaN(num) ? defaultValue : num;
-  }
-
-  static _parseBoolean(value) {
-    if (value === null || value === undefined || value === '') {
-      return false;
-    }
-    return value === true || String(value).toLowerCase() === 'true';
-  }
-
-  static _parseDate(value) {
-    if (!value) return null;
-    
-    if (value instanceof Date) {
-      return value;
-    }
-    
-    const date = new Date(value);
-    return isNaN(date.getTime()) ? null : date;
-  }
+function formatDate(date) {
+  const dt = date instanceof Date ? date : new Date(date);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
 }
