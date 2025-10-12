@@ -18,7 +18,6 @@
           <span class="sidebar-title">Pantry Pilot</span>
         </div>
         <nav class="sidebar-nav">
-          <p class="sidebar-heading">Workspace</p>
           <button type="button" class="nav-item" data-view="summary">
             <span class="nav-icon">⟡</span>
             <span>Summary</span>
@@ -49,7 +48,7 @@
           </div>
           <div class="toolbar-right">
             <div class="toolbar-segmented" role="group" aria-label="View selector">
-              <button type="button" class="segmented-btn active" data-view="summary" aria-label="Summary view">▢</button>
+              <button type="button" class="segmented-btn" data-view="summary" aria-label="Summary view">▢</button>
               <button type="button" class="segmented-btn" data-view="inventory" aria-label="Inventory view">☰</button>
               <button type="button" class="segmented-btn" data-view="settings" aria-label="Settings view">⚙</button>
             </div>
@@ -165,6 +164,26 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div id="product-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="product-modal-title">
+      <div class="modal-backdrop"></div>
+      <div class="modal-dialog">
+        <form id="product-form" class="modal-content">
+          <div class="modal-header">
+            <h2 id="product-modal-title">Product Details</h2>
+            <button type="button" id="modal-close" class="circle-btn" aria-label="Close dialog">×</button>
+          </div>
+          <div id="product-form-body" class="modal-body"></div>
+          <div class="modal-actions">
+            <button type="button" id="modal-delete" class="ghost-button">Delete</button>
+            <div class="modal-actions-right">
+              <button type="button" id="modal-cancel" class="secondary">Cancel</button>
+              <button type="submit" class="primary">Save</button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
 
     <script type="module" src="/app.js"></script>
