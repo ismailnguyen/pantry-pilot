@@ -33,22 +33,6 @@ body {
   gap: 1.25rem;
 }
 
-.traffic-lights {
-  display: flex;
-  gap: 0.6rem;
-}
-
-.traffic-lights .light {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.6);
-}
-
-.traffic-lights .light.red { background: #ff5f58; }
-.traffic-lights .light.amber { background: #fdbc2e; }
-.traffic-lights .light.green { background: #29c040; }
-
 .sidebar-title {
   font-size: 1.1rem;
   font-weight: 600;
@@ -178,43 +162,6 @@ body {
   display: flex;
   align-items: center;
   gap: 0.9rem;
-}
-
-.toolbar-segmented {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.segmented-btn {
-  padding: 0.4rem 0.75rem;
-  border: none;
-  background: transparent;
-  color: #4b5563;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.segmented-btn:not(:disabled):hover {
-  background: rgba(59, 130, 246, 0.15);
-  color: #1d4ed8;
-}
-
-.segmented-btn.active {
-  background: rgba(59, 130, 246, 0.2);
-  color: #1d4ed8;
-  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.35);
-}
-
-.segmented-btn:disabled,
-.segmented-btn.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .toolbar-search {
@@ -544,6 +491,7 @@ button:not(:disabled):hover {
   background: rgba(239, 68, 68, 0.15);
   color: #b91c1c;
 }
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -638,4 +586,3 @@ body.modal-open {
 }
 
 .row-hidden { display: none; }
-.filter-hidden { display: none; }

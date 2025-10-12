@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'pantryPilotSettings';
 const PLACEHOLDER_IMAGE = 'https://via.placeholder.com/160x120?text=Item';
+const SAVE_DEBOUNCE_MS = 800;
 
 const defaultConfig = {
   inventory: {
@@ -42,9 +43,7 @@ let navItems;
 let segmentedButtons;
 let toolbarTitle;
 let toolbarSubtitle;
-let openSettingsBtn;
 let addRowBtn;
-let saveBtn;
 let refreshBtn;
 let loadBtn;
 let reloadBtn;
@@ -57,6 +56,7 @@ let modalCloseBtn;
 let modalCancelBtn;
 let modalDeleteBtn;
 let loadPromise = null;
+let autoSaveTimeoutId = null;
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -73,9 +73,7 @@ function init() {
   segmentedButtons = Array.from(document.querySelectorAll('.segmented-btn'));
   toolbarTitle = document.getElementById('toolbar-title');
   toolbarSubtitle = document.getElementById('toolbar-subtitle');
-  openSettingsBtn = document.getElementById('open-settings');
   addRowBtn = document.getElementById('add-row');
-  saveBtn = document.getElementById('save-inventory');
   refreshBtn = document.getElementById('refresh-insights');
   loadBtn = document.getElementById('load-inventory');
   reloadBtn = document.getElementById('reload-data');
@@ -103,7 +101,6 @@ function init() {
     btn.addEventListener('click', () => handleNavSelection(btn.dataset.view));
   });
 
-  openSettingsBtn?.addEventListener('click', () => handleNavSelection('settings'));
 
   reloadBtn?.addEventListener('click', () => {
     if (!isConfigComplete(config)) {
@@ -115,7 +112,6 @@ function init() {
   });
 
   loadBtn?.addEventListener('click', () => handleNavSelection('inventory'));
-  saveBtn?.addEventListener('click', () => saveInventory().catch(() => {}));
   refreshBtn?.addEventListener('click', () => {
     if (!state.header.length) {
       setStatus('Load the inventory first to refresh insights.', 'error');
@@ -133,7 +129,7 @@ function init() {
     if (searchInput) searchInput.value = '';
     renderInventory();
     openProductModal(state.rows.length - 1);
-    setStatus('New product added locally. Fill details and save to sync.', 'info');
+    setStatus('New product added. Edit details and they will save automatically.', 'info');
   });
 
   searchInput?.addEventListener('input', event => {
@@ -153,6 +149,7 @@ function init() {
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') closeProductModal();
   });
+  modalForm?.addEventListener('input', handleModalInputChange);
   modalForm?.addEventListener('submit', handleModalSubmit);
 
   form.addEventListener('submit', event => {
@@ -302,9 +299,6 @@ function showView(view) {
   navItems?.forEach(item => {
     item.classList.toggle('active', item.dataset.view === view);
   });
-  segmentedButtons?.forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.view === view);
-  });
   state.activeView = view;
   updateToolbar(view);
 }
@@ -430,6 +424,17 @@ async function saveInventory() {
   }
 }
 
+function scheduleSave() {
+  if (!isConfigComplete(config)) return;
+  if (!state.header.length) return;
+  setStatus('Saving changes…', 'info');
+  if (autoSaveTimeoutId) clearTimeout(autoSaveTimeoutId);
+  autoSaveTimeoutId = setTimeout(() => {
+    autoSaveTimeoutId = null;
+    saveInventory().catch(() => {});
+  }, SAVE_DEBOUNCE_MS);
+}
+
 function buildRequestPayload(cfg, extras = {}) {
   return {
     inventory: {
@@ -470,6 +475,7 @@ function renderInventory() {
 
   if (!state.header.length) {
     container.innerHTML = '<p class="empty-state">No data loaded yet. Use “Go To Inventory” after entering your settings.</p>';
+    state.visibleCount = 0;
     updateControls();
     return;
   }
@@ -572,7 +578,6 @@ function renderSummary() {
 function updateControls() {
   const hasData = state.header.length > 0;
   addRowBtn && (addRowBtn.disabled = !hasData);
-  saveBtn && (saveBtn.disabled = !hasData);
   refreshBtn && (refreshBtn.disabled = !hasData);
   updateNavState();
 }
@@ -621,6 +626,8 @@ function closeProductModal() {
   productModal.classList.add('hidden');
   document.body.classList.remove('modal-open');
   state.activeProductIndex = null;
+  renderInventory();
+  renderSummary();
 }
 
 function handleModalSubmit(event) {
@@ -633,8 +640,7 @@ function handleModalSubmit(event) {
   const updatedRow = state.header.map((_, idx) => formData.get(String(idx))?.toString() ?? '');
   state.rows[state.activeProductIndex] = updatedRow;
   closeProductModal();
-  renderInventory();
-  setStatus('Product updated locally. Save to sync with Google Sheets.', 'success');
+  scheduleSave();
 }
 
 function handleModalDelete(event) {
@@ -646,9 +652,18 @@ function handleModalDelete(event) {
   state.rows.splice(state.activeProductIndex, 1);
   state.computed.splice(state.activeProductIndex, 1);
   closeProductModal();
-  renderInventory();
-  renderSummary();
-  setStatus('Product removed locally. Save to sync changes.', 'info');
+  scheduleSave();
+}
+
+function handleModalInputChange(event) {
+  if (state.activeProductIndex == null) return;
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+  const idx = Number(target.name);
+  if (!Number.isFinite(idx)) return;
+  if (!state.rows[state.activeProductIndex]) return;
+  state.rows[state.activeProductIndex][idx] = target.value;
+  scheduleSave();
 }
 
 function normalizeComputedLength() {
