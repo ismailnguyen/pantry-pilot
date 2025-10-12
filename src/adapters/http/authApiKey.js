@@ -1,21 +1,13 @@
-export function createApiKeyAuth(apiKey) {
-  return (req, res, next) => {
-    const providedKey = req.headers['x-api-key'];
-    
-    if (!providedKey) {
-      return res.status(401).json({
-        code: 'unauthorized',
-        message: 'API key required. Provide x-api-key header.'
-      });
-    }
-    
-    if (providedKey !== apiKey) {
-      return res.status(401).json({
-        code: 'unauthorized',
-        message: 'Invalid API key'
-      });
-    }
-    
-    next();
-  };
+export function authApiKey(req, res, next) {
+  const providedKey = req.headers['x-api-key'];
+  const expectedKey = process.env.API_KEY;
+
+  if (!providedKey || providedKey !== expectedKey) {
+    return res.status(401).json({
+      code: 'unauthorized',
+      message: 'API key required or invalid'
+    });
+  }
+
+  next();
 }
