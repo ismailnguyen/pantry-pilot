@@ -39,11 +39,24 @@
 
       <main class="main-panel">
         <header class="main-toolbar">
+          <div class="toolbar-controls">
+            <button type="button" class="circle-btn" aria-label="Back" disabled>‹</button>
+            <button type="button" class="circle-btn" aria-label="Forward" disabled>›</button>
+          </div>
           <div class="toolbar-left">
             <h1 id="toolbar-title">Summary</h1>
             <p id="toolbar-subtitle">High-level snapshot of your pantry.</p>
           </div>
           <div class="toolbar-right">
+            <div class="toolbar-segmented" role="group" aria-label="View selector">
+              <button type="button" class="segmented-btn active" data-view="summary" aria-label="Summary view">▢</button>
+              <button type="button" class="segmented-btn" data-view="inventory" aria-label="Inventory view">☰</button>
+              <button type="button" class="segmented-btn" data-view="settings" aria-label="Settings view">⚙</button>
+            </div>
+            <label class="toolbar-search">
+              <span class="sr-only">Search inventory</span>
+              <input type="search" id="inventory-search" placeholder="Search inventory…" autocomplete="off" />
+            </label>
             <button type="button" id="reload-data" class="ghost-button">Reload Data</button>
           </div>
         </header>

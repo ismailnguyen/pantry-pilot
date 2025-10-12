@@ -68,7 +68,8 @@ const state = {
   header: [],
   rows: [],
   computed: [],
-  summary: null
+  summary: null,
+  filterText: ''
 };
 
 let statusEl;
@@ -76,6 +77,7 @@ let summaryCards;
 let summaryEmpty;
 let views;
 let navItems;
+let segmentedButtons;
 let toolbarTitle;
 let toolbarSubtitle;
 let openSettingsBtn;
@@ -92,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
     settings: document.getElementById('settings-view')
   };
   navItems = Array.from(document.querySelectorAll('.nav-item'));
+  segmentedButtons = Array.from(document.querySelectorAll('.segmented-btn'));
   toolbarTitle = document.getElementById('toolbar-title');
   toolbarSubtitle = document.getElementById('toolbar-subtitle');
   openSettingsBtn = document.getElementById('open-settings');
@@ -108,6 +111,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   navItems.forEach(item => {
     item.addEventListener('click', () => handleNavSelection(item.dataset.view));
+  });
+
+  segmentedButtons.forEach(btn => {
+    btn.addEventListener('click', () => handleNavSelection(btn.dataset.view));
+  });
+
+  const searchInput = document.getElementById('inventory-search');
+  searchInput?.addEventListener('input', event => {
+    state.filterText = event.target.value ?? '';
+    renderInventory();
   });
 
   openSettingsBtn?.addEventListener('click', () => {
@@ -294,6 +307,9 @@ function showView(view) {
   navItems?.forEach(item => {
     item.classList.toggle('active', item.dataset.view === view);
   });
+  segmentedButtons?.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
   updateToolbar(view);
   activeView = view;
 }
@@ -330,6 +346,18 @@ function updateNavState() {
     const disabled = !hasConfig;
     item.disabled = disabled;
     item.classList.toggle('disabled', disabled);
+  });
+  segmentedButtons?.forEach(btn => {
+    const view = btn.dataset.view;
+    if (view === 'settings') {
+      btn.disabled = false;
+      btn.classList.remove('disabled');
+      return;
+    }
+    const disabled = !hasConfig;
+    btn.disabled = disabled;
+    if (disabled) btn.classList.add('disabled');
+    else btn.classList.remove('disabled');
   });
 }
 
@@ -447,9 +475,9 @@ function collectTableData() {
   const headerCells = Array.from(table.querySelectorAll('thead th[data-col]'));
   const header = headerCells.map(cell => cell.textContent.trim());
   const rowElements = Array.from(table.querySelectorAll('tbody tr'));
-  const rows = rowElements.map((_, rowIndex) =>
+  const rows = rowElements.map(rowEl =>
     header.map((__, colIndex) => {
-      const input = table.querySelector(`input[data-row="${rowIndex}"][data-col="${colIndex}"]`);
+      const input = rowEl.querySelector(`input[data-col="${colIndex}"]`);
       return input ? input.value : '';
     })
   );
@@ -472,6 +500,12 @@ function renderInventory() {
     updateControls();
     return;
   }
+
+  const filterRaw = state.filterText ?? '';
+  const filterQuery = filterRaw.trim().toLowerCase();
+  const hasFilter = filterQuery.length > 0;
+  let visibleCount = 0;
+
   const table = document.createElement('table');
   table.id = 'inventory-table';
   const thead = document.createElement('thead');
@@ -511,16 +545,25 @@ function renderInventory() {
   const tbody = document.createElement('tbody');
   state.rows.forEach((row, rowIndex) => {
     const tr = document.createElement('tr');
+    tr.dataset.index = String(rowIndex);
     const insight = state.computed[rowIndex] ?? null;
     if (insight?.valid && insight.needsReplenishment) tr.classList.add('needs-replenishment');
     if (insight && !insight.valid) tr.classList.add('invalid-row');
+
+    const normalizedRow = Array.from({ length: state.header.length }, (_, colIndex) => row?.[colIndex] ?? '');
+    const matchesFilter = !hasFilter || normalizedRow.some(value => String(value ?? '').toLowerCase().includes(filterQuery));
+    if (!matchesFilter) {
+      tr.classList.add('row-hidden');
+    } else {
+      visibleCount += 1;
+      tr.classList.remove('row-hidden');
+    }
 
     const indexTd = document.createElement('td');
     indexTd.textContent = String(rowIndex + 1);
     indexTd.className = 'row-index';
     tr.appendChild(indexTd);
 
-    const normalizedRow = Array.from({ length: state.header.length }, (_, colIndex) => row?.[colIndex] ?? '');
     normalizedRow.forEach((value, colIndex) => {
       const td = document.createElement('td');
       td.className = 'data-cell';
@@ -530,7 +573,6 @@ function renderInventory() {
       input.value = value;
       input.dataset.row = String(rowIndex);
       input.dataset.col = String(colIndex);
-      // input.placeholder = state.header[colIndex] ?? '';
       td.appendChild(input);
       tr.appendChild(td);
     });
@@ -562,6 +604,20 @@ function renderInventory() {
 
   table.appendChild(tbody);
   container.appendChild(table);
+
+  const existingMessage = container.querySelector('.filter-empty');
+  if (existingMessage) existingMessage.remove();
+  if (hasFilter && visibleCount === 0) {
+    const message = document.createElement('p');
+    message.className = 'empty-state filter-empty';
+    const queryLabel = filterRaw.trim() || 'your search';
+    message.textContent = `No items match “${queryLabel}”.`;
+    container.appendChild(message);
+    table.classList.add('filter-hidden');
+  } else {
+    table.classList.remove('filter-hidden');
+  }
+
   updateControls();
 }
 
