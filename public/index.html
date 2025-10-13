@@ -58,6 +58,8 @@
             <div id="summary-cards" class="summary-cards"></div>
             <p id="summary-empty" class="summary-empty">Load your inventory to see a quick summary of your pantry.</p>
           </section>
+          <section id="summary-ai-actions" class="summary-ai hidden"></section>
+          <section id="summary-ai-results" class="summary-ai-results hidden"></section>
           <section id="summary-dashboard" class="summary-dashboard"></section>
         </section>
 
@@ -132,6 +134,17 @@
                   <label class="field">
                     <span class="field-label">Email To</span>
                     <input type="email" name="emailTo" autocomplete="off" placeholder="you@gmail.com" class="input" />
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="fieldset">
+                <legend class="fieldset-title">AI Assistance</legend>
+                <div class="field-grid">
+                  <label class="field field--full">
+                    <span class="field-label">OpenAI API Key</span>
+                    <input type="password" name="openaiApiKey" autocomplete="off" placeholder="sk-..." class="input input--secret" />
+                    <span class="field-note">Stored locally in your browser. Required for AI-powered actions.</span>
                   </label>
                 </div>
               </fieldset>

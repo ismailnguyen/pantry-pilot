@@ -168,6 +168,23 @@ body {
   transition: background 0.15s ease, color 0.15s ease, border 0.15s ease, transform 0.15s ease;
 }
 
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.button:disabled:hover {
+  background: inherit;
+  color: inherit;
+  border-color: inherit;
+}
+
+.button--sm {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
 .button--primary {
   background: #0f172a;
   color: #fff;
@@ -253,6 +270,197 @@ body {
   margin-top: 16px;
   font-size: 0.9rem;
   color: #6b7280;
+}
+
+.summary-ai {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.summary-ai-card {
+  border-radius: 18px;
+  border: 1px solid #d6d9e1;
+  background: linear-gradient(135deg, rgba(226, 232, 240, 0.45), rgba(255, 255, 255, 0.95));
+  padding: 24px;
+  box-shadow: 0 20px 36px rgba(15, 23, 42, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.summary-ai-card--disabled {
+  opacity: 0.75;
+}
+
+.summary-ai-card__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.summary-ai-card__description {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.summary-ai-card__footer {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.summary-ai-card__hint {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.summary-ai-results {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.summary-ai-results__meta {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.summary-ai-results__message {
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.6);
+  background: rgba(241, 245, 249, 0.6);
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.summary-ai-results__message--error {
+  border-color: rgba(248, 113, 113, 0.6);
+  background: rgba(254, 242, 242, 0.85);
+  color: #b91c1c;
+}
+
+.summary-ai-results__message--info {
+  border-color: rgba(96, 165, 250, 0.6);
+  background: rgba(191, 219, 254, 0.6);
+  color: #1d4ed8;
+}
+
+.summary-ai-results__message--muted {
+  border-style: solid;
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(248, 250, 252, 0.8);
+  color: #64748b;
+}
+
+.summary-ai-result {
+  border-radius: 20px;
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  background: #ffffff;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.08);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.summary-ai-result__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-ai-result__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.summary-ai-result__subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.summary-ai-alternatives {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.summary-ai-alt {
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(248, 250, 252, 0.85);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summary-ai-alt__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.summary-ai-alt__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.summary-ai-alt__confidence {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.18);
+  color: #1d4ed8;
+  letter-spacing: 0.03em;
+}
+
+.summary-ai-alt__description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.summary-ai-alt__meta {
+  margin: 0;
+  list-style: none;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.summary-ai-alt__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.summary-ai-alt__link {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.summary-ai-alt__link:hover {
+  text-decoration: underline;
 }
 
 .summary-dashboard {
@@ -495,6 +703,12 @@ body {
   font-weight: 600;
 }
 
+.field-note {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
 .input,
 .textarea {
   border-radius: 12px;
@@ -515,6 +729,12 @@ body {
   outline: none;
   border-color: #64748b;
   box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.2);
+}
+
+.input--secret {
+  font-family: 'SFMono-Regular', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  letter-spacing: 0.04em;
 }
 
 .form-actions {

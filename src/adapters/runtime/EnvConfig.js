@@ -14,7 +14,8 @@ const SecretsSchema = z
         to: z.string()
       })
       .partial()
-      .default({})
+      .default({}),
+    openai: z.object({ apiKey: z.string() }).partial().default({})
   })
   .partial()
   .default({});
@@ -60,6 +61,9 @@ export function loadConfigFromEnvAndBody(body) {
       pass: process.env.SMTP_PASS,
       from: process.env.EMAIL_FROM,
       to: process.env.EMAIL_TO
+    },
+    openai: {
+      apiKey: process.env.OPENAI_API_KEY
     }
   };
 

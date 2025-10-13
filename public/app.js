@@ -20,6 +20,9 @@ const defaultConfig = {
       pass: '',
       from: 'Pantry Pilot you@gmail.com',
       to: 'you@gmail.com'
+    },
+    openai: {
+      apiKey: ''
     }
   }
 };
@@ -32,7 +35,11 @@ const state = {
   filterText: '',
   activeView: 'summary',
   activeProductIndex: null,
-  visibleCount: 0
+  visibleCount: 0,
+  aiSuggestions: [],
+  aiLoading: false,
+  aiError: null,
+  aiGeneratedAt: null
 };
 
 const MODAL_FIELD_GROUPS = [
@@ -163,6 +170,8 @@ let statusEl;
 let summaryCards;
 let summaryEmpty;
 let summaryDashboard;
+let summaryAiActions;
+let summaryAiResults;
 let views;
 let navItems;
 let toolbarTitle;
@@ -191,6 +200,8 @@ function init() {
   summaryCards = document.getElementById('summary-cards');
   summaryEmpty = document.getElementById('summary-empty');
   summaryDashboard = document.getElementById('summary-dashboard');
+  summaryAiActions = document.getElementById('summary-ai-actions');
+  summaryAiResults = document.getElementById('summary-ai-results');
   views = {
     summary: document.getElementById('summary-view'),
     inventory: document.getElementById('inventory-view'),
@@ -313,6 +324,9 @@ function normalizeConfig(raw) {
         pass: raw?.secrets?.smtp?.pass ?? '',
         from: raw?.secrets?.smtp?.from ?? 'Pantry Pilot you@gmail.com',
         to: raw?.secrets?.smtp?.to ?? 'you@gmail.com'
+      },
+      openai: {
+        apiKey: raw?.secrets?.openai?.apiKey ?? ''
       }
     }
   };
@@ -335,10 +349,14 @@ function populateForm(cfg) {
   form.elements.smtpPass.value = cfg.secrets.smtp.pass;
   form.elements.emailFrom.value = cfg.secrets.smtp.from;
   form.elements.emailTo.value = cfg.secrets.smtp.to;
+  if (form.elements.openaiApiKey) {
+    form.elements.openaiApiKey.value = cfg.secrets.openai.apiKey;
+  }
 }
 
 function gatherConfigFromForm(form) {
   const formData = new FormData(form);
+  const rawOpenAiKey = formData.get('openaiApiKey');
   return normalizeConfig({
     inventory: {
       spreadsheetId: formData.get('spreadsheetId')?.trim() ?? '',
@@ -357,6 +375,9 @@ function gatherConfigFromForm(form) {
         pass: formData.get('smtpPass')?.toString() ?? '',
         from: formData.get('emailFrom')?.trim() || 'Pantry Pilot you@gmail.com',
         to: formData.get('emailTo')?.trim() || 'you@gmail.com'
+      },
+      openai: {
+        apiKey: rawOpenAiKey ? rawOpenAiKey.toString().trim() : ''
       }
     }
   });
@@ -496,6 +517,10 @@ function loadInventory({ silent = false } = {}) {
       state.rows = (data.rows ?? []).map(row => Array.from({ length: state.header.length }, (_, i) => row?.[i] ?? ''));
       state.computed = Array.from({ length: state.rows.length }, (_, i) => data.computed?.[i] ?? null);
       state.summary = data.summary ?? null;
+      state.aiSuggestions = [];
+      state.aiError = null;
+      state.aiGeneratedAt = null;
+      state.aiLoading = false;
       state.filterText = '';
       if (searchInput) searchInput.value = '';
       renderSummary();
@@ -573,6 +598,9 @@ function buildRequestPayload(cfg, extras = {}) {
         pass: cfg.secrets.smtp.pass,
         from: cfg.secrets.smtp.from,
         to: cfg.secrets.smtp.to
+      },
+      openai: {
+        apiKey: cfg.secrets.openai.apiKey
       }
     },
     options: { dryRun: true },
@@ -589,11 +617,18 @@ function collectTableData() {
 
 function renderSummary() {
   if (!summaryCards) return;
+  const hasSummary = Boolean(state.summary);
   summaryCards.innerHTML = '';
   summaryDashboard?.classList.add('hidden');
   summaryDashboard && (summaryDashboard.innerHTML = '');
+  if (summaryAiActions) {
+    summaryAiActions.innerHTML = '';
+  }
 
-  if (!state.summary) {
+  renderSummaryAiActions({ hasSummary });
+  renderSummaryAiResults();
+
+  if (!hasSummary) {
     summaryEmpty?.classList.remove('hidden');
     updateToolbar('summary');
     return;
@@ -717,6 +752,514 @@ function renderSummary() {
   }
 
   if (state.activeView === 'summary') updateToolbar('summary');
+}
+
+function renderSummaryAiActions({ hasSummary }) {
+  if (!summaryAiActions) return;
+  summaryAiActions.innerHTML = '';
+  const isLoading = state.aiLoading;
+  const actions = [
+    {
+      key: 'ai-find-alternatives',
+      title: 'Find alternative products',
+      description:
+        'Use OpenAI Deep Search to surface substitute items with better pricing, availability, or quality signals.',
+      cta: 'Find alternatives',
+      handler: handleFindAlternativeProducts,
+      requiresSummary: true,
+      requiresApiKey: true
+    }
+  ];
+
+  if (actions.length === 0) {
+    summaryAiActions.classList.add('hidden');
+    return;
+  }
+
+  const hasKey = hasOpenAiKey();
+
+  actions.forEach(action => {
+    const card = document.createElement('article');
+    card.className = 'summary-ai-card';
+
+    const title = document.createElement('h3');
+    title.className = 'summary-ai-card__title';
+    title.textContent = action.title;
+    card.appendChild(title);
+
+    const description = document.createElement('p');
+    description.className = 'summary-ai-card__description';
+    description.textContent = action.description;
+    card.appendChild(description);
+
+    const footer = document.createElement('div');
+    footer.className = 'summary-ai-card__footer';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'button button--primary';
+    button.textContent = action.cta;
+
+    const hints = [];
+    let disabled = false;
+    if (action.requiresSummary && !hasSummary) {
+      hints.push('Load your inventory to enable this action.');
+      disabled = true;
+    }
+    if (action.requiresApiKey && !hasKey) {
+      hints.push('Add your OpenAI API key in Settings to enable.');
+      disabled = true;
+    }
+    if (isLoading) {
+      hints.push('Working on alternatives…');
+      button.textContent = 'Finding alternatives…';
+      disabled = true;
+    }
+    if (disabled) {
+      button.disabled = true;
+      card.classList.add('summary-ai-card--disabled');
+    } else {
+      button.addEventListener('click', action.handler);
+    }
+    footer.appendChild(button);
+
+    if (hints.length > 0) {
+      const hint = document.createElement('span');
+      hint.className = 'summary-ai-card__hint';
+      hint.textContent = hints.join(' ');
+      footer.appendChild(hint);
+    }
+
+    if (state.aiGeneratedAt) {
+      const meta = document.createElement('span');
+      meta.className = 'summary-ai-card__hint';
+      meta.textContent = `Last run: ${formatDateTime(state.aiGeneratedAt)}`;
+      footer.appendChild(meta);
+    }
+
+    card.appendChild(footer);
+    summaryAiActions.appendChild(card);
+  });
+
+  summaryAiActions.classList.remove('hidden');
+}
+
+function renderSummaryAiResults() {
+  if (!summaryAiResults) return;
+  summaryAiResults.innerHTML = '';
+
+  const isLoading = state.aiLoading;
+  const error = state.aiError;
+  const suggestions = Array.isArray(state.aiSuggestions) ? state.aiSuggestions : [];
+  const hasSuggestions = suggestions.length > 0;
+
+  if (!isLoading && !error && !hasSuggestions) {
+    summaryAiResults.classList.add('hidden');
+    return;
+  }
+
+  summaryAiResults.classList.remove('hidden');
+
+  if (isLoading) {
+    const loading = document.createElement('div');
+    loading.className = 'summary-ai-results__message summary-ai-results__message--info';
+    loading.textContent = 'Finding viable alternatives…';
+    summaryAiResults.appendChild(loading);
+    return;
+  }
+
+  if (error) {
+    const errorBox = document.createElement('div');
+    errorBox.className = 'summary-ai-results__message summary-ai-results__message--error';
+    errorBox.textContent = error;
+    summaryAiResults.appendChild(errorBox);
+    return;
+  }
+
+  if (!hasSuggestions) {
+    const empty = document.createElement('div');
+    empty.className = 'summary-ai-results__message summary-ai-results__message--muted';
+    empty.textContent = state.aiGeneratedAt
+      ? 'No pending AI suggestions. Run Find alternative products again for a fresh batch.'
+      : 'No AI suggestions yet. Run an action to populate this space.';
+    summaryAiResults.appendChild(empty);
+    return;
+  }
+
+  if (state.aiGeneratedAt) {
+    const meta = document.createElement('p');
+    meta.className = 'summary-ai-results__meta';
+    meta.textContent = `Generated ${formatDateTime(state.aiGeneratedAt)} via OpenAI.`;
+    summaryAiResults.appendChild(meta);
+  }
+
+  suggestions.forEach(suggestion => {
+    const card = document.createElement('article');
+    card.className = 'summary-ai-result';
+    card.dataset.suggestionId = suggestion.id;
+
+    const header = document.createElement('div');
+    header.className = 'summary-ai-result__header';
+
+    const title = document.createElement('h3');
+    title.className = 'summary-ai-result__title';
+    title.textContent = suggestion.productName || suggestion.productId || 'Product';
+    header.appendChild(title);
+
+    if (suggestion.reason || suggestion.context) {
+      const subtitle = document.createElement('p');
+      subtitle.className = 'summary-ai-result__subtitle';
+      subtitle.textContent = suggestion.reason || suggestion.context;
+      header.appendChild(subtitle);
+    }
+
+    card.appendChild(header);
+
+    const altList = document.createElement('div');
+    altList.className = 'summary-ai-alternatives';
+
+    suggestion.alternatives.forEach(alternative => {
+      altList.appendChild(createAiAlternativeCard(suggestion, alternative));
+    });
+
+    card.appendChild(altList);
+    summaryAiResults.appendChild(card);
+  });
+}
+
+function createAiAlternativeCard(suggestion, alternative) {
+  const altCard = document.createElement('div');
+  altCard.className = 'summary-ai-alt';
+  altCard.dataset.altId = alternative.id;
+
+  const header = document.createElement('div');
+  header.className = 'summary-ai-alt__header';
+
+  const title = document.createElement('h4');
+  title.className = 'summary-ai-alt__title';
+  title.textContent = alternative.name || 'Alternative';
+  header.appendChild(title);
+
+  if (typeof alternative.confidence === 'number' && Number.isFinite(alternative.confidence)) {
+    const confidence = document.createElement('span');
+    confidence.className = 'summary-ai-alt__confidence';
+    confidence.textContent = `${Math.round(alternative.confidence * 100)}% match`;
+    header.appendChild(confidence);
+  }
+
+  altCard.appendChild(header);
+
+  if (alternative.summary) {
+    const description = document.createElement('p');
+    description.className = 'summary-ai-alt__description';
+    description.textContent = alternative.summary;
+    altCard.appendChild(description);
+  }
+
+  const metaList = document.createElement('ul');
+  metaList.className = 'summary-ai-alt__meta';
+
+  if (alternative.vendor) {
+    const vendor = document.createElement('li');
+    vendor.textContent = `Vendor: ${alternative.vendor}`;
+    metaList.appendChild(vendor);
+  }
+
+  if (alternative.price) {
+    const price = document.createElement('li');
+    price.textContent = `Price: ${alternative.price}`;
+    metaList.appendChild(price);
+  }
+
+  if (metaList.childNodes.length > 0) {
+    altCard.appendChild(metaList);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'summary-ai-alt__actions';
+
+  const acceptBtn = document.createElement('button');
+  acceptBtn.type = 'button';
+  acceptBtn.className = 'button button--primary button--sm';
+  acceptBtn.textContent = 'Accept';
+  acceptBtn.addEventListener('click', () => applyAiAlternative(suggestion.id, alternative.id));
+  actions.appendChild(acceptBtn);
+
+  const rejectBtn = document.createElement('button');
+  rejectBtn.type = 'button';
+  rejectBtn.className = 'button button--ghost button--sm';
+  rejectBtn.textContent = 'Reject';
+  rejectBtn.addEventListener('click', () => dismissAiAlternative(suggestion.id, alternative.id));
+  actions.appendChild(rejectBtn);
+
+  if (alternative.url) {
+    const link = document.createElement('a');
+    link.href = alternative.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'summary-ai-alt__link';
+    link.textContent = 'Open link';
+    actions.appendChild(link);
+  }
+
+  altCard.appendChild(actions);
+
+  return altCard;
+}
+
+async function handleFindAlternativeProducts() {
+  if (!hasOpenAiKey()) {
+    setStatus('Add your OpenAI API key in Settings to run AI actions.', 'error');
+    handleNavSelection('settings');
+    return;
+  }
+  if (!state.summary || state.rows.length === 0) {
+    setStatus('Load your inventory first to explore AI alternatives.', 'error');
+    return;
+  }
+  if (state.aiLoading) return;
+
+  state.aiLoading = true;
+  state.aiError = null;
+  state.aiSuggestions = [];
+  state.aiGeneratedAt = null;
+  renderSummaryAiActions({ hasSummary: Boolean(state.summary) });
+  renderSummaryAiResults();
+
+  const products = buildAiProducts();
+  if (!products.length) {
+    state.aiLoading = false;
+    state.aiError = 'No valid products found to analyse.';
+    renderSummaryAiResults();
+    renderSummaryAiActions({ hasSummary: Boolean(state.summary) });
+    setStatus('No valid products found to analyse.', 'error');
+    return;
+  }
+
+  try {
+    setStatus('Connecting to OpenAI Deep Search…', 'info');
+    const payload = buildRequestPayload(config, {
+      ai: {
+        action: 'find-alternatives',
+        summary: state.summary
+          ? {
+              generatedAt: state.summary.generatedAt,
+              needsReplenishment: state.summary.needsReplenishment,
+              policy: state.summary.policy ?? null
+            }
+          : null,
+        products
+      }
+    });
+    const response = await fetch('/api/ai/find-alternatives', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const err = await parseError(response);
+      throw new Error(err);
+    }
+    const data = await response.json();
+    const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+    const normalized = suggestions
+      .map((suggestion, suggestionIndex) => {
+        const alternatives = Array.isArray(suggestion?.alternatives)
+          ? suggestion.alternatives
+              .filter(alt => alt && alt.name)
+              .map((alt, altIndex) => ({
+                ...alt,
+                id: `${Date.now()}-${suggestionIndex}-${altIndex}`
+              }))
+          : [];
+        return {
+          id: `ai-suggestion-${Date.now()}-${suggestionIndex}`,
+          productId: suggestion?.productId ?? null,
+          productName: suggestion?.productName ?? suggestion?.productId ?? `Product #${suggestionIndex + 1}`,
+          reason: suggestion?.reason ?? '',
+          context: suggestion?.context ?? '',
+          alternatives
+        };
+      })
+      .filter(entry => entry.alternatives.length > 0);
+
+    state.aiSuggestions = normalized;
+    state.aiGeneratedAt = data?.generatedAt ?? new Date().toISOString();
+    state.aiError = null;
+
+    if (state.aiSuggestions.length === 0) {
+      setStatus('OpenAI returned no alternative recommendations.', 'info');
+    } else {
+      const totalAlternatives = state.aiSuggestions.reduce((count, item) => count + item.alternatives.length, 0);
+      setStatus(`AI surfaced ${totalAlternatives} alternative option(s). Review below.`, 'success');
+    }
+  } catch (error) {
+    console.error(error);
+    state.aiError = error instanceof Error ? error.message : String(error);
+    setStatus(`Failed to retrieve AI suggestions: ${state.aiError}`, 'error');
+  } finally {
+    state.aiLoading = false;
+    renderSummaryAiActions({ hasSummary: Boolean(state.summary) });
+    renderSummaryAiResults();
+  }
+}
+
+function hasOpenAiKey() {
+  const key = config?.secrets?.openai?.apiKey;
+  return typeof key === 'string' && key.trim().length > 0;
+}
+
+function buildAiProducts() {
+  if (!state.header.length || !state.rows.length) return [];
+  const products = state.rows.map((row, index) => {
+    const product = rowToObject(row);
+    const insight = state.computed?.[index] ?? null;
+    const id = getFieldValue(product, ['id']);
+    const name = getFieldValue(product, ['name', 'product_name', 'item']);
+    if (!id && !name) return null;
+    const qtyRemaining = toNumberOrNull(getFieldValue(product, ['qty_remaining', 'quantity', 'stock']));
+    const avgDaily = toNumberOrNull(getFieldValue(product, ['avg_daily_consumption']));
+    const avgMonthly = toNumberOrNull(getFieldValue(product, ['avg_monthly_consumption']));
+  const explicitReplenishBy = getFieldValue(product, ['replenish_by_date']);
+  const computedReplenishBy =
+    insight && insight.replenishByDate !== undefined && insight.replenishByDate !== null
+      ? insight.replenishByDate
+      : null;
+  const replenishBy = explicitReplenishBy || computedReplenishBy || null;
+    const autoSubscription =
+      (getFieldValue(product, ['auto_subscription']) || '').toString().toUpperCase() === 'TRUE';
+    const notes = getFieldValue(product, ['notes', 'note', 'comment', 'comments']);
+    const buyPlace = getFieldValue(product, ['buy_place', 'supplier']);
+    const buyUrl = getFieldValue(product, ['buy_url']);
+    return {
+      id: id || `row-${index + 1}`,
+      productName: name || id || `Row ${index + 1}`,
+      brand: getFieldValue(product, ['brand']) || null,
+      unit: getFieldValue(product, ['unit']) || null,
+      qtyRemaining,
+      avgDailyConsumption: avgDaily,
+      avgMonthlyConsumption: avgMonthly,
+      replenishByDate: replenishBy || null,
+      autoSubscriptionActive: autoSubscription,
+      needsReplenishment: Boolean(insight?.needsReplenishment),
+      reason: insight?.reason ?? null,
+      buy: {
+        place: buyPlace || null,
+        url: buyUrl || null
+      },
+      notes: notes || null
+    };
+  });
+  const valid = products.filter(Boolean);
+  if (!valid.length) return [];
+  const prioritized = valid.filter(item => item.needsReplenishment);
+  return (prioritized.length ? prioritized : valid).slice(0, 20);
+}
+
+function applyAiAlternative(suggestionId, alternativeId) {
+  const suggestion = state.aiSuggestions.find(entry => entry.id === suggestionId);
+  if (!suggestion) return;
+  const alternative = suggestion.alternatives.find(entry => entry.id === alternativeId);
+  if (!alternative) return;
+
+  const rowIndex = findRowIndexForProduct(suggestion.productId, suggestion.productName);
+  if (rowIndex === -1) {
+    setStatus(`Unable to locate ${suggestion.productName} in the inventory grid.`, 'error');
+    return;
+  }
+
+  const updates = [];
+  if (alternative.vendor && updateRowField(rowIndex, 'buy_place', alternative.vendor)) {
+    updates.push('preferred vendor');
+  }
+  if (alternative.url && updateRowField(rowIndex, 'buy_url', alternative.url)) {
+    updates.push('purchase link');
+  }
+  const note = buildAiNote(alternative);
+  if (note && updateRowField(rowIndex, 'notes', note, { append: true })) {
+    updates.push('notes');
+  }
+
+  removeAiAlternative(suggestionId, alternativeId);
+  renderSummaryAiActions({ hasSummary: Boolean(state.summary) });
+  renderSummaryAiResults();
+
+  const appliedLabel = updates.length ? updates.join(', ') : null;
+  if (updates.length) {
+    scheduleSave();
+    setStatus(`Applied AI recommendation for ${suggestion.productName} (${appliedLabel}). Saving changes…`, 'success');
+  } else {
+    setStatus(`Recorded AI feedback for ${suggestion.productName}.`, 'info');
+  }
+}
+
+function dismissAiAlternative(suggestionId, alternativeId) {
+  const suggestion = state.aiSuggestions.find(entry => entry.id === suggestionId);
+  if (!suggestion) return;
+  const alternative = suggestion.alternatives.find(entry => entry.id === alternativeId);
+  removeAiAlternative(suggestionId, alternativeId);
+  renderSummaryAiActions({ hasSummary: Boolean(state.summary) });
+  setStatus(
+    `Dismissed ${alternative?.name ?? 'alternative'} for ${suggestion.productName}. You can rerun AI actions anytime.`,
+    'info'
+  );
+}
+
+function removeAiAlternative(suggestionId, alternativeId) {
+  state.aiSuggestions = state.aiSuggestions
+    .map(entry => {
+      if (entry.id !== suggestionId) return entry;
+      const remaining = entry.alternatives.filter(alt => alt.id !== alternativeId);
+      return { ...entry, alternatives: remaining };
+    })
+    .filter(entry => entry.alternatives.length > 0);
+  renderSummaryAiResults();
+}
+
+function findRowIndexForProduct(productId, productName) {
+  if (!state.header.length) return -1;
+  for (let index = 0; index < state.rows.length; index += 1) {
+    const product = rowToObject(state.rows[index]);
+    const id = getFieldValue(product, ['id']);
+    if (productId && id && id === productId) return index;
+  }
+  if (productName) {
+    const normalizedName = productName.trim().toLowerCase();
+    for (let index = 0; index < state.rows.length; index += 1) {
+      const product = rowToObject(state.rows[index]);
+      const name = getFieldValue(product, ['name', 'product_name', 'item']);
+      if (name && name.trim().toLowerCase() === normalizedName) return index;
+    }
+  }
+  return -1;
+}
+
+function updateRowField(rowIndex, normalizedKey, value, { append = false } = {}) {
+  const targetIndex = state.header.findIndex(header => headerKey(header) === normalizedKey);
+  if (targetIndex === -1) return false;
+  const nextValue = value == null ? '' : String(value);
+  const currentValue = state.rows[rowIndex][targetIndex] ?? '';
+  if (append && currentValue) {
+    const combined = `${currentValue}`.includes(nextValue) ? currentValue : `${currentValue}\n${nextValue}`.trim();
+    state.rows[rowIndex][targetIndex] = combined;
+  } else {
+    state.rows[rowIndex][targetIndex] = nextValue;
+  }
+  return true;
+}
+
+function buildAiNote(alternative) {
+  const lines = [];
+  if (alternative.summary) lines.push(alternative.summary);
+  const metaParts = [];
+  if (alternative.vendor) metaParts.push(`Vendor: ${alternative.vendor}`);
+  if (alternative.price) metaParts.push(`Price: ${alternative.price}`);
+  if (typeof alternative.confidence === 'number' && Number.isFinite(alternative.confidence)) {
+    metaParts.push(`Confidence: ${Math.round(alternative.confidence * 100)}%`);
+  }
+  if (metaParts.length) lines.push(metaParts.join(' · '));
+  if (alternative.url) lines.push(alternative.url);
+  return lines.join('\n');
 }
 
 function renderInventory() {
@@ -1393,6 +1936,21 @@ function formatDateDisplay(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function toNumberOrNull(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
 }
 
 function escapeHtml(value) {
