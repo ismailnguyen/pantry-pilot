@@ -42,30 +42,6 @@ body {
   margin-bottom: 32px;
 }
 
-.traffic-lights {
-  display: flex;
-  gap: 8px;
-}
-
-.traffic-lights .light {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.6);
-}
-
-.traffic-lights .light--red {
-  background: #ff5f58;
-}
-
-.traffic-lights .light--amber {
-  background: #fdbc2e;
-}
-
-.traffic-lights .light--green {
-  background: #29c040;
-}
-
 .sidebar-title {
   font-size: 1.1rem;
   font-weight: 600;
