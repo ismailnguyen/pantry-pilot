@@ -35,6 +35,130 @@ const state = {
   visibleCount: 0
 };
 
+const MODAL_FIELD_GROUPS = [
+  {
+    key: 'identity',
+    title: 'Identity',
+    description: 'Basic descriptors that help you recognise this product.',
+    matchers: [
+      'id',
+      'name',
+      'brand',
+      'unit',
+      'category',
+      'sku',
+      'image',
+      'image_url',
+      'photo'
+    ]
+  },
+  {
+    key: 'inventory',
+    title: 'Inventory & Usage',
+    description: 'Quantities, consumption rates, and replenishment history.',
+    matchers: [
+      'qty_remaining',
+      'quantity',
+      'stock',
+      'avg_daily_consumption',
+      'avg_monthly_consumption',
+      'last_replenished_at'
+    ]
+  },
+  {
+    key: 'planning',
+    title: 'Planning Parameters',
+    description: 'Lead times, buffers, and ordering constraints.',
+    matchers: ['lead_time_days', 'safety_stock_days', 'min_order_qty', 'pack_size']
+  },
+  {
+    key: 'buying',
+    title: 'Buying Details',
+    description: 'Quick links and preferred vendors for reordering.',
+    matchers: ['buy_place', 'buy_url', 'supplier', 'cost', 'price']
+  },
+  {
+    key: 'automation',
+    title: 'Automation',
+    description: 'Subscription or automation context.',
+    matchers: ['auto_subscription', 'auto_subscription_note']
+  },
+  {
+    key: 'computed',
+    title: 'Policy Output',
+    description: 'Derived fields updated by Pantry Pilot.',
+    matchers: ['needs_replenishment', 'replenish_by_date', 'recommended_order_qty', 'reason', 'last_check_at']
+  },
+  {
+    key: 'notes',
+    title: 'Notes',
+    description: 'Free-form notes and commentary.',
+    matchers: ['notes', 'note', 'comment', 'comments']
+  },
+  {
+    key: 'other',
+    title: 'Other Columns',
+    description: 'Additional sheet columns not categorised above.',
+    matchers: []
+  }
+];
+
+const MODAL_FIELD_CONFIG = {
+  id: { component: 'text', placeholder: 'e.g. abc-001', autoCapitalize: false },
+  name: { component: 'text', placeholder: 'Product name' },
+  brand: { component: 'text', placeholder: 'Brand or manufacturer' },
+  unit: { component: 'select', options: ['', 'count', 'ml', 'g', 'kg', 'l'] },
+  qty_remaining: { component: 'number', min: 0, step: 'any' },
+  quantity: { component: 'number', min: 0, step: 'any' },
+  stock: { component: 'number', min: 0, step: 'any' },
+  avg_daily_consumption: { component: 'number', min: 0, step: 'any', hint: 'Average daily usage in the base unit.' },
+  avg_monthly_consumption: {
+    component: 'number',
+    min: 0,
+    step: 'any',
+    hint: 'Average monthly usage. Used if daily consumption is blank.'
+  },
+  last_replenished_at: { component: 'date' },
+  auto_subscription: {
+    component: 'select',
+    options: [
+      { value: '', label: 'Not set' },
+      { value: 'TRUE', label: 'Active' },
+      { value: 'FALSE', label: 'Inactive' }
+    ]
+  },
+  auto_subscription_note: { component: 'textarea', rows: 2, fullWidth: true },
+  buy_place: { component: 'text', placeholder: 'Amazon, Costco…' },
+  supplier: { component: 'text' },
+  cost: { component: 'number', min: 0, step: '0.01' },
+  price: { component: 'number', min: 0, step: '0.01' },
+  buy_url: { component: 'url', placeholder: 'https://…', fullWidth: true },
+  lead_time_days: { component: 'number', min: 0, step: 1 },
+  safety_stock_days: { component: 'number', min: 0, step: 1 },
+  min_order_qty: { component: 'number', min: 0, step: 1 },
+  pack_size: { component: 'number', min: 0, step: 1 },
+  notes: { component: 'textarea', rows: 3, fullWidth: true },
+  note: { component: 'textarea', rows: 3, fullWidth: true },
+  comment: { component: 'textarea', rows: 3, fullWidth: true },
+  comments: { component: 'textarea', rows: 3, fullWidth: true },
+  needs_replenishment: {
+    component: 'select',
+    options: [
+      { value: '', label: 'Not set' },
+      { value: 'TRUE', label: 'Needs replenishment' },
+      { value: 'FALSE', label: 'Stock OK' }
+    ],
+    badge: 'computed'
+  },
+  replenish_by_date: { component: 'date', badge: 'computed' },
+  recommended_order_qty: { component: 'number', min: 0, step: 'any', badge: 'computed' },
+  reason: { component: 'text', placeholder: 'Reason code', badge: 'computed' },
+  last_check_at: { component: 'datetime', badge: 'computed' },
+  image: { component: 'url', placeholder: 'Image URL' },
+  image_url: { component: 'url', placeholder: 'Image URL' },
+  photo: { component: 'url', placeholder: 'Image URL' }
+};
+
 let statusEl;
 let summaryCards;
 let summaryEmpty;
@@ -707,6 +831,7 @@ function openProductModal(index) {
   if (!productModal || !modalBody || index == null || !state.rows[index]) return;
   state.activeProductIndex = index;
   const product = rowToObject(state.rows[index]);
+  const insight = state.computed?.[index] ?? null;
   modalBody.innerHTML = '';
 
   if (modalTitleEl) {
@@ -716,32 +841,460 @@ function openProductModal(index) {
   const canDelete = state.rows.length > 0;
   if (modalDeleteBtn) modalDeleteBtn.disabled = !canDelete;
 
-  state.header.forEach((header, fieldIndex) => {
-    const fieldId = `modal-field-${fieldIndex}`;
-    const wrapper = document.createElement('label');
-    wrapper.className = 'modal-field flex flex-col gap-1 text-sm text-slate-600';
-    wrapper.setAttribute('for', fieldId);
+  const overview = buildModalOverview(product, insight);
+  if (overview) modalBody.appendChild(overview);
 
-    const title = document.createElement('span');
-    title.className = 'text-xs font-semibold uppercase tracking-wide text-slate-500';
-    title.textContent = formatHeaderLabel(header);
-    wrapper.appendChild(title);
-
-    const value = product.__raw[header] ?? '';
-    const isLong = /note|description|reason|key|details/i.test(header);
-    const input = isLong ? document.createElement('textarea') : document.createElement('input');
-    input.id = fieldId;
-    input.name = String(fieldIndex);
-    input.value = value;
-    input.className =
-      'rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200';
-    wrapper.appendChild(input);
-    modalBody.appendChild(wrapper);
+  const sections = buildModalSections({
+    headers: state.header,
+    product,
+    insight
   });
+  sections.forEach(section => modalBody.appendChild(section));
 
   document.body.classList.add('modal-open');
   productModal.classList.remove('hidden');
-  modalForm?.querySelector('input, textarea')?.focus();
+  modalForm?.querySelector('input, textarea, select')?.focus();
+}
+
+function buildModalSections({ headers, product }) {
+  if (!headers || headers.length === 0) return [];
+  const sectionMap = new Map();
+
+  MODAL_FIELD_GROUPS.forEach(group => {
+    sectionMap.set(group.key, createModalSection(group));
+  });
+
+  headers.forEach((header, fieldIndex) => {
+    if (header == null || header === '') return;
+    const normalizedKey = headerKey(header);
+    if (!normalizedKey) return;
+
+    const fieldElement = buildModalField({
+      header,
+      fieldIndex,
+      value: product.__raw?.[header] ?? '',
+      normalizedKey
+    });
+    if (!fieldElement) return;
+
+    const groupKey = resolveFieldGroup(normalizedKey);
+    const target = sectionMap.get(groupKey) ?? sectionMap.get('other');
+    if (!target) return;
+    target.grid.appendChild(fieldElement);
+  });
+
+  return MODAL_FIELD_GROUPS.map(group => sectionMap.get(group.key))
+    .filter(section => section && section.grid.childNodes.length > 0)
+    .map(section => {
+      if (section.header) section.section.appendChild(section.header);
+      section.body.appendChild(section.grid);
+      section.section.appendChild(section.body);
+      return section.section;
+    });
+}
+
+function createModalSection(group) {
+  const section = document.createElement('section');
+  section.className = 'modal-section';
+  section.dataset.group = group.key;
+
+  let header = null;
+  if (group.title || group.description) {
+    header = document.createElement('div');
+    header.className = 'modal-section__header';
+    if (group.title) {
+      const title = document.createElement('h3');
+      title.className = 'modal-section__title';
+      title.textContent = group.title;
+      header.appendChild(title);
+    }
+    if (group.description) {
+      const subtitle = document.createElement('p');
+      subtitle.className = 'modal-section__subtitle';
+      subtitle.textContent = group.description;
+      header.appendChild(subtitle);
+    }
+  }
+
+  const body = document.createElement('div');
+  body.className = 'modal-section__body';
+
+  const grid = document.createElement('div');
+  grid.className = 'modal-grid';
+
+  return { section, header, body, grid };
+}
+
+function resolveFieldGroup(normalizedKey) {
+  if (!normalizedKey) return 'other';
+  const config = MODAL_FIELD_CONFIG[normalizedKey];
+  if (config?.group) return config.group;
+  const match = MODAL_FIELD_GROUPS.find(group => group.matchers.includes(normalizedKey));
+  return match ? match.key : 'other';
+}
+
+function buildModalField({ header, fieldIndex, value, normalizedKey }) {
+  const config = MODAL_FIELD_CONFIG[normalizedKey] ?? {};
+  const labelText = config.label ?? formatHeaderLabel(header || normalizedKey);
+  const controlId = `modal-field-${fieldIndex}`;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'modal-field';
+  wrapper.dataset.field = normalizedKey;
+  if (config.fullWidth) wrapper.classList.add('modal-field--wide');
+
+  const isComputed = resolveFieldGroup(normalizedKey) === 'computed' || config.badge === 'computed';
+  if (isComputed) wrapper.classList.add('modal-field--computed');
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'modal-field__label-row';
+
+  const labelEl = document.createElement('label');
+  labelEl.className = 'modal-field__label';
+  labelEl.setAttribute('for', controlId);
+  labelEl.textContent = labelText;
+  labelRow.appendChild(labelEl);
+
+  if (isComputed) {
+    const badge = document.createElement('span');
+    badge.className = 'modal-field__badge';
+    badge.textContent = 'Policy output';
+    labelRow.appendChild(badge);
+  }
+
+  wrapper.appendChild(labelRow);
+
+  const control = createModalControl({
+    config,
+    value,
+    fieldIndex,
+    normalizedKey,
+    controlId
+  });
+  if (!control) return null;
+  wrapper.appendChild(control);
+
+  if (config.hint) {
+    const hint = document.createElement('p');
+    hint.className = 'modal-field__hint';
+    hint.textContent = config.hint;
+    wrapper.appendChild(hint);
+  }
+
+  return wrapper;
+}
+
+function createModalControl({ config, value, fieldIndex, normalizedKey, controlId }) {
+  const component = config.component ?? 'text';
+  const initialValue = value == null ? '' : String(value);
+  let control;
+
+  switch (component) {
+    case 'textarea': {
+      control = document.createElement('textarea');
+      control.className = 'modal-textarea';
+      control.rows = config.rows ?? 3;
+      control.value = initialValue;
+      break;
+    }
+    case 'select': {
+      control = document.createElement('select');
+      control.className = 'modal-select';
+      populateSelectOptions(control, config.options, initialValue);
+      control.value = initialValue;
+      break;
+    }
+    case 'number': {
+      control = document.createElement('input');
+      control.type = 'number';
+      control.inputMode = 'decimal';
+      control.className = 'modal-input';
+      if (config.min != null) control.min = String(config.min);
+      if (config.max != null) control.max = String(config.max);
+      if (config.step != null) control.step = String(config.step);
+      control.value = initialValue;
+      break;
+    }
+    case 'date': {
+      control = document.createElement('input');
+      control.type = 'date';
+      control.className = 'modal-input';
+      const dateValue = toInputDate(initialValue);
+      control.value = dateValue || initialValue;
+      break;
+    }
+    case 'datetime': {
+      control = document.createElement('input');
+      control.type = 'datetime-local';
+      control.className = 'modal-input';
+      const dateTimeValue = toInputDateTime(initialValue);
+      control.value = dateTimeValue || initialValue;
+      break;
+    }
+    case 'url': {
+      control = document.createElement('input');
+      control.type = 'url';
+      control.className = 'modal-input';
+      control.placeholder = config.placeholder ?? '';
+      control.value = initialValue;
+      break;
+    }
+    case 'text':
+    default: {
+      control = document.createElement('input');
+      control.type = 'text';
+      control.className = 'modal-input';
+      control.value = initialValue;
+      break;
+    }
+  }
+
+  if (!control) return null;
+
+  control.id = controlId;
+  control.name = String(fieldIndex);
+  control.dataset.field = normalizedKey;
+  control.autocomplete = 'off';
+  if (config.autoCapitalize === false && 'autocapitalize' in control) {
+    control.autocapitalize = 'none';
+  }
+  if (config.spellcheck === false && 'spellcheck' in control) {
+    control.spellcheck = false;
+  }
+  if (config.maxLength != null && 'maxLength' in control) {
+    control.maxLength = Number(config.maxLength);
+  }
+  if (config.placeholder && component !== 'select') control.placeholder = config.placeholder;
+  if (config.required) control.required = true;
+  if (config.readOnly) control.readOnly = true;
+
+  return control;
+}
+
+function populateSelectOptions(select, options, currentValue) {
+  const items = Array.isArray(options) ? options : [];
+  const seen = new Set();
+  if (items.length === 0) {
+    const blankOption = document.createElement('option');
+    blankOption.value = '';
+    blankOption.textContent = '—';
+    select.appendChild(blankOption);
+    if (currentValue && currentValue !== '') {
+      const currentOption = document.createElement('option');
+      currentOption.value = currentValue;
+      currentOption.textContent = currentValue;
+      select.appendChild(currentOption);
+    }
+    return;
+  }
+
+  items.forEach(option => {
+    const optionEl = document.createElement('option');
+    if (typeof option === 'string') {
+      optionEl.value = option;
+      optionEl.textContent = option === '' ? '—' : option;
+      seen.add(String(optionEl.value));
+    } else if (option && typeof option === 'object') {
+      const val = option.value ?? '';
+      optionEl.value = val;
+      optionEl.textContent = option.label ?? (val === '' ? '—' : String(val));
+      seen.add(String(optionEl.value));
+    }
+    select.appendChild(optionEl);
+  });
+
+  const normalizedCurrent = currentValue == null ? '' : String(currentValue);
+  if (normalizedCurrent && !seen.has(normalizedCurrent)) {
+    const currentOption = document.createElement('option');
+    currentOption.value = normalizedCurrent;
+    currentOption.textContent = normalizedCurrent;
+    select.appendChild(currentOption);
+  }
+}
+
+function buildModalOverview(product, insight) {
+  const name = getFieldValue(product, ['name', 'product_name', 'item']) || 'Product Details';
+  const brand = getFieldValue(product, ['brand']);
+  const unit = getFieldValue(product, ['unit']);
+  const qtyRemaining = getFieldValue(product, ['qty_remaining', 'quantity', 'stock']);
+  const imageSrc = getFieldValue(product, ['image', 'image_url', 'photo']) || PLACEHOLDER_IMAGE;
+  const needsReplenishment =
+    insight?.needsReplenishment ??
+    (getFieldValue(product, ['needs_replenishment']) || '').toString().toUpperCase() === 'TRUE';
+  const recommendation = insight?.recommendedOrderQty ?? getFieldValue(product, ['recommended_order_qty']);
+  const replenishBy = insight?.replenishByDate ?? getFieldValue(product, ['replenish_by_date']);
+  const daysLeft = insight?.daysUntilDepletion;
+  const reason = insight?.reason ?? getFieldValue(product, ['reason']);
+  const autoSubscription =
+    (getFieldValue(product, ['auto_subscription']) || '').toString().toUpperCase() === 'TRUE';
+  const autoSubscriptionNote = getFieldValue(product, ['auto_subscription_note']);
+  const buyPlace = getFieldValue(product, ['buy_place', 'supplier']);
+  const buyUrl = getFieldValue(product, ['buy_url']);
+
+  const overview = document.createElement('section');
+  overview.className = 'product-overview';
+
+  const primary = document.createElement('div');
+  primary.className = 'product-overview__primary';
+
+  const thumb = document.createElement('div');
+  thumb.className = 'product-overview__thumb';
+  const img = document.createElement('img');
+  img.src = imageSrc || PLACEHOLDER_IMAGE;
+  img.alt = `${name} preview`;
+  img.loading = 'lazy';
+  thumb.appendChild(img);
+  primary.appendChild(thumb);
+
+  const info = document.createElement('div');
+  info.className = 'product-overview__info';
+
+  const title = document.createElement('h3');
+  title.className = 'product-overview__title';
+  title.textContent = name;
+  info.appendChild(title);
+
+  if (brand) {
+    const brandEl = document.createElement('p');
+    brandEl.className = 'product-overview__brand';
+    brandEl.textContent = brand;
+    info.appendChild(brandEl);
+  }
+
+  const badgeRow = document.createElement('div');
+  badgeRow.className = 'product-overview__badges';
+
+  const statusBadge = document.createElement('span');
+  statusBadge.className = needsReplenishment ? 'product-pill product-pill--alert' : 'product-pill product-pill--ok';
+  statusBadge.textContent = needsReplenishment ? 'Needs replenishment' : 'Stock healthy';
+  badgeRow.appendChild(statusBadge);
+
+  if (autoSubscription) {
+    const autoBadge = document.createElement('span');
+    autoBadge.className = 'product-pill product-pill--neutral';
+    autoBadge.textContent = 'Subscription active';
+    badgeRow.appendChild(autoBadge);
+  }
+
+  if (buyPlace) {
+    const buyBadge = document.createElement('span');
+    buyBadge.className = 'product-pill product-pill--soft';
+    buyBadge.textContent = `Preferred: ${buyPlace}`;
+    badgeRow.appendChild(buyBadge);
+  }
+
+  info.appendChild(badgeRow);
+  primary.appendChild(info);
+  overview.appendChild(primary);
+
+  const formattedQty = formatNumberDisplay(qtyRemaining, { decimals: 2, fallback: '—' });
+  const metrics = [
+    {
+      label: 'Qty remaining',
+      value: formattedQty === '—' ? '—' : `${formattedQty}${unit ? ` ${unit}` : ''}`
+    },
+    {
+      label: 'Days left',
+      value: formatDaysDisplay(daysLeft)
+    },
+    {
+      label: 'Replenish by',
+      value: formatDateDisplay(replenishBy)
+    },
+    {
+      label: 'Recommended order',
+      value: formatNumberDisplay(recommendation, { decimals: 0, fallback: '—' })
+    }
+  ];
+
+  const metricsList = document.createElement('dl');
+  metricsList.className = 'product-overview__metrics';
+  metrics.forEach(metric => {
+    const item = document.createElement('div');
+    item.className = 'product-overview__metric';
+    const term = document.createElement('dt');
+    term.textContent = metric.label;
+    const value = document.createElement('dd');
+    value.textContent = metric.value;
+    item.appendChild(term);
+    item.appendChild(value);
+    metricsList.appendChild(item);
+  });
+  overview.appendChild(metricsList);
+
+  if (reason || autoSubscriptionNote || buyUrl) {
+    const footnotes = document.createElement('div');
+    footnotes.className = 'product-overview__footnotes';
+
+    if (reason) {
+      const reasonEl = document.createElement('p');
+      reasonEl.className = 'product-overview__note';
+      reasonEl.textContent = `Reason: ${reason}`;
+      footnotes.appendChild(reasonEl);
+    }
+
+    if (autoSubscriptionNote) {
+      const subEl = document.createElement('p');
+      subEl.className = 'product-overview__note';
+      subEl.textContent = autoSubscriptionNote;
+      footnotes.appendChild(subEl);
+    }
+
+    if (buyUrl) {
+      const link = document.createElement('a');
+      link.className = 'product-overview__link';
+      link.href = buyUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Open purchase link';
+      footnotes.appendChild(link);
+    }
+
+    overview.appendChild(footnotes);
+  }
+
+  return overview;
+}
+
+function formatNumberDisplay(value, { decimals = 1, fallback = '—' } = {}) {
+  if (value == null || value === '') return fallback;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  if (decimals === 0) return String(Math.round(number));
+  const fixed = number.toFixed(decimals);
+  return fixed.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}
+
+function formatDaysDisplay(value) {
+  if (value == null || value === '') return '—';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  if (number <= 0) return '0 days';
+  if (number < 2) return `${Math.max(1, Math.round(number))} day`;
+  if (number < 7) return `${number.toFixed(1).replace(/\.0$/, '')} days`;
+  return `${Math.round(number)} days`;
+}
+
+function toInputDate(value) {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function toInputDateTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const h = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d}T${h}:${min}`;
 }
 
 function closeProductModal() {
