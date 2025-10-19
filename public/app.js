@@ -1,6 +1,9 @@
 const STORAGE_KEY = 'pantryPilotSettings';
 const PLACEHOLDER_IMAGE = 'https://via.placeholder.com/160x120?text=Item';
 const SAVE_DEBOUNCE_MS = 800;
+const NAME_FIELD_KEYS = ['name', 'product_name', 'item'];
+const IMAGE_FIELD_KEYS = ['image', 'image_url', 'photo'];
+const AI_IMAGE_DEBOUNCE_MS = 1200;
 
 const defaultConfig = {
   inventory: {
@@ -161,9 +164,7 @@ const MODAL_FIELD_CONFIG = {
   recommended_order_qty: { component: 'number', min: 0, step: 'any', badge: 'computed' },
   reason: { component: 'text', placeholder: 'Reason code', badge: 'computed' },
   last_check_at: { component: 'datetime', badge: 'computed' },
-  image: { component: 'url', placeholder: 'Image URL' },
-  image_url: { component: 'url', placeholder: 'Image URL' },
-  photo: { component: 'url', placeholder: 'Image URL' }
+  image_url: { component: 'text', placeholder: 'Image URL' },
 };
 
 let statusEl;
@@ -190,6 +191,8 @@ let modalCancelBtn;
 let modalDeleteBtn;
 let loadPromise = null;
 let autoSaveTimeoutId = null;
+const imageGenerationTimers = new Map();
+const imageGenerationPending = new Set();
 
 let config = normalizeConfig(loadStoredConfig());
 
@@ -539,10 +542,10 @@ function loadInventory({ silent = false } = {}) {
   return loadPromise;
 }
 
-function scheduleSave() {
+function scheduleSave({ suppressStatus = false } = {}) {
   if (!isConfigComplete(config)) return;
   if (!state.header.length) return;
-  setStatus('Saving changes…', 'info');
+  if (!suppressStatus) setStatus('Saving changes…', 'info');
   if (autoSaveTimeoutId) clearTimeout(autoSaveTimeoutId);
   autoSaveTimeoutId = setTimeout(() => {
     autoSaveTimeoutId = null;
@@ -1883,7 +1886,139 @@ function handleModalInputChange(event) {
   if (!Number.isFinite(fieldIndex)) return;
   if (!state.rows[state.activeProductIndex]) return;
   state.rows[state.activeProductIndex][fieldIndex] = target.value;
+  const normalizedKey =
+    target.dataset.field || headerKey(state.header[fieldIndex] ?? '');
+  if (normalizedKey && NAME_FIELD_KEYS.includes(normalizedKey)) {
+    requestImageGenerationForRow(state.activeProductIndex);
+  }
   scheduleSave();
+}
+
+function requestImageGenerationForRow(rowIndex) {
+  if (rowIndex == null || !state.rows[rowIndex]) return;
+  const openAiKey = config?.secrets?.openai?.apiKey?.trim();
+  if (!openAiKey) return;
+  const imageFieldKey = getFirstAvailableFieldKey(IMAGE_FIELD_KEYS);
+  if (!imageFieldKey) return;
+  if (rowHasImage(rowIndex)) return;
+  const product = rowToObject(state.rows[rowIndex]);
+  const productName = (getFieldValue(product, NAME_FIELD_KEYS) || '').trim();
+  if (productName.length < 3) return;
+  if (imageGenerationPending.has(rowIndex)) return;
+
+  const existingTimer = imageGenerationTimers.get(rowIndex);
+  if (existingTimer) clearTimeout(existingTimer);
+
+  const timer = setTimeout(() => {
+    imageGenerationTimers.delete(rowIndex);
+    generateImageForRow(rowIndex).catch(error => {
+      console.error(error);
+      setStatus(`Image generation failed: ${error.message ?? error}`, 'error');
+    });
+  }, AI_IMAGE_DEBOUNCE_MS);
+  imageGenerationTimers.set(rowIndex, timer);
+}
+
+async function generateImageForRow(rowIndex) {
+  if (imageGenerationPending.has(rowIndex)) return;
+  const row = state.rows[rowIndex];
+  if (!row) return;
+  const product = rowToObject(row);
+  const productName = (getFieldValue(product, NAME_FIELD_KEYS) || '').trim();
+  if (productName.length < 3) return;
+  if (rowHasImage(rowIndex)) return;
+
+  imageGenerationPending.add(rowIndex);
+  const brand = (getFieldValue(product, ['brand']) || '').trim();
+  const context = (getFieldValue(product, ['category', 'notes', 'note']) || '').trim();
+
+  try {
+    setStatus(`Generating image for ${productName}…`, 'info');
+    const payload = buildAiImageRequestPayload(config, {
+      productName,
+      brand: brand || null,
+      context: context || null
+    });
+    const response = await fetch('/api/ai/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const message = await parseError(response);
+      throw new Error(message);
+    }
+    const result = await response.json();
+    const imageUrl = result?.imageUrl;
+    if (!imageUrl) throw new Error('Image URL missing in response.');
+    applyGeneratedImage(rowIndex, imageUrl);
+    setStatus(`Added AI image for ${productName}.`, 'success');
+  } finally {
+    imageGenerationPending.delete(rowIndex);
+  }
+}
+
+function applyGeneratedImage(rowIndex, imageUrl) {
+  const targetKey = getFirstAvailableFieldKey(IMAGE_FIELD_KEYS);
+  if (!targetKey) return;
+  const updated = updateRowField(rowIndex, targetKey, imageUrl);
+  if (!updated) return;
+
+  if (state.activeProductIndex === rowIndex) {
+    updateModalFieldValue(targetKey, imageUrl);
+    updateActiveModalImage(imageUrl);
+  }
+  renderInventory();
+  scheduleSave({ suppressStatus: true });
+}
+
+function updateModalFieldValue(normalizedKey, value) {
+  if (!modalForm) return;
+  const wrapper = modalForm.querySelector(`.modal-field[data-field="${normalizedKey}"]`);
+  if (!wrapper) return;
+  const control = wrapper.querySelector('input, textarea, select');
+  if (control) control.value = value ?? '';
+}
+
+function updateActiveModalImage(imageUrl) {
+  if (!productModal) return;
+  const img = productModal.querySelector('.product-overview__thumb img');
+  if (img) img.src = imageUrl || PLACEHOLDER_IMAGE;
+}
+
+function rowHasImage(rowIndex) {
+  const row = state.rows[rowIndex];
+  if (!row) return false;
+  const product = rowToObject(row);
+  return IMAGE_FIELD_KEYS.some(key => {
+    const value = getFieldValue(product, [key]);
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+}
+
+function getFirstAvailableFieldKey(keys) {
+  if (!Array.isArray(keys)) return null;
+  for (const key of keys) {
+    if (state.header.some(header => headerKey(header) === key)) {
+      return key;
+    }
+  }
+  return null;
+}
+
+function buildAiImageRequestPayload(cfg, aiDetails) {
+  return {
+    secrets: {
+      openai: {
+        apiKey: cfg?.secrets?.openai?.apiKey ?? ''
+      }
+    },
+    ai: {
+      productName: aiDetails.productName,
+      brand: aiDetails.brand,
+      context: aiDetails.context
+    }
+  };
 }
 
 function normalizeComputedLength() {

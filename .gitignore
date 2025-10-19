@@ -149,3 +149,4 @@ dist/
 # Temporary files
 tmp/
 temp/
+public/generated/

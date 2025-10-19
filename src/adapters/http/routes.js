@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
 import express from 'express';
 import { loadConfigFromEnvAndBody } from '../runtime/EnvConfig.js';
 import { PinoLogger } from '../runtime/PinoLogger.js';
@@ -9,6 +12,8 @@ import { decide } from '../../domain/services/ReplenishmentPolicy.js';
 import { createHeaderIndex, mapRowToProduct } from '../mappers/SheetRowMapper.js';
 
 const OPENAI_CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_IMAGE_GENERATION_URL = 'https://api.openai.com/v1/images/generations';
+const GENERATED_IMAGE_DIR = path.resolve(process.cwd(), 'public', 'generated');
 
 export const router = express.Router();
 
@@ -92,6 +97,72 @@ router.post('/api/inventory/save', async (req, res) => {
     res.json({ ok: true, updatedRows: rows.length });
   } catch (err) {
     handleError(res, ctx?.logger, err);
+  }
+});
+
+router.post('/api/ai/generate-image', async (req, res) => {
+  const logger = new PinoLogger();
+  try {
+    const cfg = loadConfigFromEnvAndBody(req.body);
+    const apiKey = cfg?.secrets?.openai?.apiKey;
+    if (!apiKey) {
+      return res.status(400).json({ code: 'missing_openai_key', message: 'OpenAI API key is required.' });
+    }
+
+    const rawProductName = String(req.body?.ai?.productName ?? '').trim();
+    const rawBrand = String(req.body?.ai?.brand ?? '').trim();
+    const context = String(req.body?.ai?.context ?? '').trim();
+
+    if (!rawProductName) {
+      return res.status(400).json({
+        code: 'bad_request',
+        message: 'ai.productName must be a non-empty string.'
+      });
+    }
+
+    const prompt = buildImagePrompt(rawProductName, rawBrand, context);
+    const imageResponse = await fetch(OPENAI_IMAGE_GENERATION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-image-1',
+        prompt,
+        size: 'auto',
+        quality: 'auto'
+      })
+    });
+
+    if (!imageResponse.ok) {
+      const detail = await safeReadErrorMessage(imageResponse);
+      throw new Error(detail || 'OpenAI image generation failed.');
+    }
+
+    const imagePayload = await imageResponse.json();
+    const base64 = imagePayload?.data?.[0]?.b64_json;
+    if (typeof base64 !== 'string' || !base64.length) {
+      throw new Error('OpenAI returned an empty image payload.');
+    }
+
+    const buffer = Buffer.from(base64, 'base64');
+    const fileName = buildImageFileName(rawProductName);
+    await mkdir(GENERATED_IMAGE_DIR, { recursive: true });
+    const filePath = path.join(GENERATED_IMAGE_DIR, fileName);
+    await writeFile(filePath, buffer);
+
+    logger.info({ fileName, bytes: buffer.length }, 'ai_image_generated');
+    res.json({
+      imageUrl: `/generated/${fileName}`,
+      fileName,
+      prompt,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ err: message }, 'ai_image_error');
+    res.status(500).json({ code: 'ai_error', message });
   }
 });
 
@@ -369,4 +440,34 @@ function selectProductsForAi(products) {
   const prioritized = products.filter(item => item.needsReplenishment);
   const cohort = prioritized.length ? prioritized : products;
   return cohort.slice(0, 10);
+}
+
+function buildImagePrompt(name, brand, context) {
+  const parts = [
+    `High-quality product photo of ${name}`,
+    brand ? `brand: ${brand}` : null,
+    'grocery item on a neutral, well-lit background',
+    'realistic photography, natural colours',
+    context ? `context: ${context}` : null
+  ].filter(Boolean);
+  return parts.join('. ') + '.';
+}
+
+function buildImageFileName(name) {
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  const safeName = normalized || 'product';
+  return `${safeName}-${randomUUID()}.png`;
+}
+
+async function safeReadErrorMessage(response) {
+  try {
+    const data = await response.json();
+    return data?.error?.message ?? data?.message ?? response.statusText;
+  } catch {
+    return response.statusText;
+  }
 }
