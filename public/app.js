@@ -1,9 +1,12 @@
 const STORAGE_KEY = 'pantryPilotSettings';
-const PLACEHOLDER_IMAGE = 'https://via.placeholder.com/160x120?text=Item';
+const PLACEHOLDER_IMAGE = 'https://placehold.co/160x120?text=Item';
 const SAVE_DEBOUNCE_MS = 800;
-const NAME_FIELD_KEYS = ['name', 'product_name', 'item'];
-const IMAGE_FIELD_KEYS = ['image', 'image_url', 'photo'];
+const NAME_FIELD_KEYS = ['name'];
+const IMAGE_FIELD_KEYS = ['image_url'];
 const AI_IMAGE_DEBOUNCE_MS = 1200;
+const SECTION_COLUMN_KEY = 'section';
+const SECTION_COLUMN_ALIASES = [SECTION_COLUMN_KEY, 'category', 'section_category'];
+const AUTO_ID_TRIGGER_KEYS = [...NAME_FIELD_KEYS, ...SECTION_COLUMN_ALIASES];
 
 const defaultConfig = {
   inventory: {
@@ -51,6 +54,8 @@ const MODAL_FIELD_GROUPS = [
     title: 'Identity',
     description: 'Basic descriptors that help you recognise this product.',
     matchers: [
+      SECTION_COLUMN_KEY,
+      'section_category',
       'id',
       'name',
       'brand',
@@ -121,6 +126,24 @@ const MODAL_FIELD_CONFIG = {
   qty_remaining: { component: 'number', min: 0, step: 'any' },
   quantity: { component: 'number', min: 0, step: 'any' },
   stock: { component: 'number', min: 0, step: 'any' },
+  section: {
+    component: 'text',
+    placeholder: 'Pantry section',
+    label: 'Section/Category',
+    insertBefore: 'name'
+  },
+  category: {
+    component: 'text',
+    placeholder: 'Pantry section',
+    label: 'Section/Category',
+    insertBefore: 'name'
+  },
+  section_category: {
+    component: 'text',
+    placeholder: 'Pantry section',
+    label: 'Section/Category',
+    insertBefore: 'name'
+  },
   avg_daily_consumption: { component: 'number', min: 0, step: 'any', hint: 'Average daily usage in the base unit.' },
   avg_monthly_consumption: {
     component: 'number',
@@ -518,6 +541,7 @@ function loadInventory({ silent = false } = {}) {
       const data = await response.json();
       state.header = (data.header ?? []).map(h => h ?? '');
       state.rows = (data.rows ?? []).map(row => Array.from({ length: state.header.length }, (_, i) => row?.[i] ?? ''));
+      ensureSectionColumn();
       state.computed = Array.from({ length: state.rows.length }, (_, i) => data.computed?.[i] ?? null);
       state.summary = data.summary ?? null;
       state.aiSuggestions = [];
@@ -732,9 +756,9 @@ function renderSummary() {
     policyCard.innerHTML = `
       <h3 class="dashboard-card__title">Policy Snapshot</h3>
       <div class="dashboard-grid">
-        <div class="dashboard-grid__row"><span>Review horizon</span><span>${escapeHtml(state.summary.policy?.reviewHorizonDays ?? '--')} days</span></div>
-        <div class="dashboard-grid__row"><span>Target window</span><span>${escapeHtml(state.summary.policy?.targetWindowDays ?? '--')} days</span></div>
-        <div class="dashboard-grid__row"><span>Dry run mode</span><span>${state.summary.policy?.dryRun ? 'Enabled' : 'Disabled'}</span></div>
+        <div class="dashboard-grid__row"><span>Review horizon:</span> <span>${escapeHtml(state.summary.policy?.reviewHorizonDays ?? '--')} days</span></div>
+        <div class="dashboard-grid__row"><span>Target window:</span> <span>${escapeHtml(state.summary.policy?.targetWindowDays ?? '--')} days</span></div>
+        <div class="dashboard-grid__row"><span>Dry run mode:</span> <span>${state.summary.policy?.dryRun ? 'Enabled' : 'Disabled'}</span></div>
       </div>
     `;
 
@@ -743,9 +767,9 @@ function renderSummary() {
     activityCard.innerHTML = `
       <h3 class="dashboard-card__title">Quick Insights</h3>
       <ul class="dashboard-list">
-        <li class="dashboard-list-item"><span>Total rows</span><span class="dashboard-list-item__meta">${state.rows.length}</span></li>
-        <li class="dashboard-list-item"><span>Needs replenishment</span><span class="dashboard-list-item__meta">${state.summary.needsReplenishment ?? 0}</span></li>
-        <li class="dashboard-list-item"><span>Last sync</span><span class="dashboard-list-item__meta">${formatDateDisplay(state.summary.generatedAt)}</span></li>
+        <li class="dashboard-list-item"><span>Total rows:</span> <span class="dashboard-list-item__meta">${state.rows.length}</span></li>
+        <li class="dashboard-list-item"><span>Needs replenishment:</span> <span class="dashboard-list-item__meta">${state.summary.needsReplenishment ?? 0}</span></li>
+        <li class="dashboard-list-item"><span>Last sync:</span> <span class="dashboard-list-item__meta">${formatDateDisplay(state.summary.generatedAt)}</span></li>
       </ul>
     `;
 
@@ -1120,7 +1144,7 @@ function buildAiProducts() {
     const id = getFieldValue(product, ['id']);
     const name = getFieldValue(product, ['name', 'product_name', 'item']);
     if (!id && !name) return null;
-    const qtyRemaining = toNumberOrNull(getFieldValue(product, ['qty_remaining', 'quantity', 'stock']));
+    const qtyRemaining = toNumberOrNull(getFieldValue(product, ['qty_remaining']));
     const avgDaily = toNumberOrNull(getFieldValue(product, ['avg_daily_consumption']));
     const avgMonthly = toNumberOrNull(getFieldValue(product, ['avg_monthly_consumption']));
   const explicitReplenishBy = getFieldValue(product, ['replenish_by_date']);
@@ -1265,6 +1289,20 @@ function buildAiNote(alternative) {
   return lines.join('\n');
 }
 
+function ensureSectionColumn() {
+  const hasSectionColumn = state.header.some(header => SECTION_COLUMN_ALIASES.includes(headerKey(header)));
+  if (hasSectionColumn) return;
+
+  const nameIndex = state.header.findIndex(header => headerKey(header) === 'name');
+  const insertIndex = nameIndex >= 0 ? nameIndex : state.header.length;
+  state.header.splice(insertIndex, 0, SECTION_COLUMN_KEY);
+  state.rows = state.rows.map(row => {
+    const nextRow = row.slice();
+    nextRow.splice(insertIndex, 0, '');
+    return nextRow;
+  });
+}
+
 function renderInventory() {
   const container = document.getElementById('inventory-container');
   if (!container) return;
@@ -1301,10 +1339,10 @@ function renderInventory() {
     card.className = 'product-card';
     if (insight?.needsReplenishment) card.classList.add('product-card--alert');
 
-    const name = escapeHtml(getFieldValue(product, ['name', 'product_name', 'item']) || 'Unnamed item');
+    const name = escapeHtml(getFieldValue(product, ['name']) || 'Unnamed item');
     const brand = escapeHtml(getFieldValue(product, ['brand']) || '—');
-    const qty = escapeHtml(getFieldValue(product, ['qty_remaining', 'quantity', 'stock']) || '—');
-    const imageSrc = escapeAttribute(getFieldValue(product, ['image', 'image_url', 'photo']) || PLACEHOLDER_IMAGE);
+    const qty = escapeHtml(getFieldValue(product, ['qty_remaining']) || '—');
+    const imageSrc = escapeAttribute(getFieldValue(product, ['image_url']) || PLACEHOLDER_IMAGE);
     const statusClass = insight?.needsReplenishment ? 'status-pill status-pill--alert' : 'status-pill status-pill--ok';
     const statusText = insight?.needsReplenishment ? 'Needs attention' : 'Stock OK';
     const nextDate = formatDateDisplay(insight?.replenishByDate);
@@ -1415,6 +1453,7 @@ function buildModalSections({ headers, product }) {
     const normalizedKey = headerKey(header);
     if (!normalizedKey) return;
 
+    const fieldConfig = MODAL_FIELD_CONFIG[normalizedKey] ?? {};
     const fieldElement = buildModalField({
       header,
       fieldIndex,
@@ -1426,7 +1465,19 @@ function buildModalSections({ headers, product }) {
     const groupKey = resolveFieldGroup(normalizedKey);
     const target = sectionMap.get(groupKey) ?? sectionMap.get('other');
     if (!target) return;
-    target.grid.appendChild(fieldElement);
+    const insertBeforeKey = fieldConfig.insertBefore;
+    if (insertBeforeKey) {
+      const reference = target.grid.querySelector(`.modal-field[data-field="${insertBeforeKey}"]`);
+      if (reference) {
+        target.grid.insertBefore(fieldElement, reference);
+        return;
+      }
+    }
+    if (fieldConfig.prepend) {
+      target.grid.insertBefore(fieldElement, target.grid.firstChild);
+    } else {
+      target.grid.appendChild(fieldElement);
+    }
   });
 
   return MODAL_FIELD_GROUPS.map(group => sectionMap.get(group.key))
@@ -1658,11 +1709,11 @@ function populateSelectOptions(select, options, currentValue) {
 }
 
 function buildModalOverview(product, insight) {
-  const name = getFieldValue(product, ['name', 'product_name', 'item']) || 'Product Details';
+  const name = getFieldValue(product, ['name']) || 'Product Details';
   const brand = getFieldValue(product, ['brand']);
   const unit = getFieldValue(product, ['unit']);
-  const qtyRemaining = getFieldValue(product, ['qty_remaining', 'quantity', 'stock']);
-  const imageSrc = getFieldValue(product, ['image', 'image_url', 'photo']) || PLACEHOLDER_IMAGE;
+  const qtyRemaining = getFieldValue(product, ['qty_remaining']);
+  const imageSrc = getFieldValue(product, ['image_url']) || PLACEHOLDER_IMAGE;
   const needsReplenishment =
     insight?.needsReplenishment ??
     (getFieldValue(product, ['needs_replenishment']) || '').toString().toUpperCase() === 'TRUE';
@@ -1891,6 +1942,9 @@ function handleModalInputChange(event) {
   if (normalizedKey && NAME_FIELD_KEYS.includes(normalizedKey)) {
     requestImageGenerationForRow(state.activeProductIndex);
   }
+  if (normalizedKey && AUTO_ID_TRIGGER_KEYS.includes(normalizedKey)) {
+    maybeAutoGenerateId(state.activeProductIndex);
+  }
   scheduleSave();
 }
 
@@ -1972,6 +2026,29 @@ function applyGeneratedImage(rowIndex, imageUrl) {
   scheduleSave({ suppressStatus: true });
 }
 
+function maybeAutoGenerateId(rowIndex) {
+  if (rowIndex == null || !state.rows[rowIndex]) return;
+  const idFieldKey = getFirstAvailableFieldKey(['id']);
+  if (!idFieldKey) return;
+  const product = rowToObject(state.rows[rowIndex]);
+  const currentId = (getFieldValue(product, ['id']) || '').trim();
+  if (currentId.length > 0) return;
+
+  const sectionValue = (getFieldValue(product, SECTION_COLUMN_ALIASES) || '').trim();
+  const nameValue = (getFieldValue(product, NAME_FIELD_KEYS) || '').trim();
+  if (!sectionValue || !nameValue) return;
+
+  const slug = buildIdSlug([sectionValue, nameValue]);
+  if (!slug) return;
+
+  const updated = updateRowField(rowIndex, idFieldKey, slug);
+  if (!updated) return;
+
+  if (state.activeProductIndex === rowIndex) {
+    updateModalFieldValue(idFieldKey, slug);
+  }
+}
+
 function updateModalFieldValue(normalizedKey, value) {
   if (!modalForm) return;
   const wrapper = modalForm.querySelector(`.modal-field[data-field="${normalizedKey}"]`);
@@ -2006,6 +2083,28 @@ function getFirstAvailableFieldKey(keys) {
   return null;
 }
 
+function buildIdSlug(parts) {
+  if (!Array.isArray(parts)) return '';
+  const segments = parts
+    .map(segment => slugifySegment(segment))
+    .filter(Boolean);
+  return segments.join('-');
+}
+
+function slugifySegment(value) {
+  if (!value) return '';
+  let working = String(value).toLowerCase();
+  try {
+    working = working.normalize('NFKD');
+  } catch {
+    // normalise not supported; continue with existing string
+  }
+  return working
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function buildAiImageRequestPayload(cfg, aiDetails) {
   return {
     secrets: {
@@ -2016,7 +2115,8 @@ function buildAiImageRequestPayload(cfg, aiDetails) {
     ai: {
       productName: aiDetails.productName,
       brand: aiDetails.brand,
-      context: aiDetails.context
+      context: aiDetails.context,
+      size: '512x512'
     }
   };
 }
